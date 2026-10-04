@@ -172,15 +172,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 // Self-healing USB bridge (level-triggered, not edge-triggered):
                 // whenever we are in USB mode with the server running and a
-                // device present but adb reverse missing, (re)establish it.
-                // Covers replug, adb-server restart, etc. The server lifecycle
+                // device present but HDC reverse missing, (re)establish it.
+                // Covers replug, HDC server restart, etc. The server lifecycle
                 // is NOT tied to device events — it stays up and the tablet
                 // reconnects via its own connect button.
                 if self.settings.connectionMode == .usb
                     && isConnected
                     && self.settings.isRunning
                     && !reverseOK {
-                    debugLog("🔌 USB bridge missing while running — (re)establishing adb reverse")
+                    debugLog("🔌 USB bridge missing while running — (re)establishing HDC reverse")
                     Task { await self.setupHDCReverse() }
                 }
             }

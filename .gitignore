@@ -56,6 +56,7 @@ dist/
 tmp/
 temp/
 *.tmp
+__pycache__/
 .superpowers/
 
 # Local ktlint binary (CI downloads its own)
@@ -64,6 +65,7 @@ AndroidClient/ktlint
 # Private signing and HarmonyOS generated files
 **/oh_modules/
 **/.hvigor/
+**/.cxx/
 **/local.properties
 *.p12
 *.p7b

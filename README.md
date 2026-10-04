@@ -2,7 +2,7 @@
 
 A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Based on [SideScreen](https://github.com/tranvuongquocdat/SideScreen), with its MIT license and attribution preserved.
 
-**Status: developer preview. The Mac host builds; the HDC USB tunnel is hardware-tested. The native HarmonyOS client is source-only pending SDK compilation, device signing, and playback verification. Do not download this expecting a finished HOS 7 display app yet.**
+**Status: developer preview. Both the Mac host and native HarmonyOS HAP build. HDC USB transport and Mac HEVC output are tested. Huawei app signing and on-phone playback remain pending. Do not download this expecting a finished HOS 7 display app yet.**
 
 ## What exists
 
@@ -19,7 +19,9 @@ A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Base
 | Mac arm64 build | Builds; 51 Swift tests passed |
 | HDC on OpenHarmony 7.0.0.107 | 1 MiB exact USB round-trip passed |
 | Portable frame validation | Address/undefined-behavior sanitizer test passed |
-| Native HAP build and installation | Pending Huawei SDK and signing |
+| Native HAP build | Release-mode arm64 HAP built with official Huawei Command Line Tools 6.1.1.280 / SDK 6.1.1.125 (API 24) |
+| Native HAP installation | Blocked by missing Huawei app certificate/profile; phone rejects unsigned HAP with error 9568320 |
+| Actual host video | 60 HEVC frames independently decoded at 1920×1200, locally and through an HDC USB forward/reverse path |
 | Video decoded and displayed on Huawei | Not yet verified |
 | Touch, native Wi-Fi pairing, audio | Not enabled in the native preview |
 | Apple notarization | Not completed |
@@ -36,11 +38,15 @@ Install official Huawei Command Line Tools. Place `hdc` plus its runtime depende
 
 ## HarmonyOS client
 
-`HarmonyClient` is an ArkTS Stage application with a native C++ surface decoder, targeting API 13+ for the initial source configuration. Open it in DevEco Studio and select an installed compatible SDK. Configure your own app signing through Huawei's supported process; private signing configuration must stay outside Git.
+`HarmonyClient` is an ArkTS Stage application with a native C++ surface decoder. It compiles against HarmonyOS 6.1.1 (API 24), with a minimum of HarmonyOS 5.0.1 (API 13). Compilation is verified; this minimum is not a claim of tested device coverage. Configure your own app signing through Huawei's supported process; private signing configuration must stay outside Git.
 
 ```sh
 HARMONY_SDK_TOOLS=/path/to/command-line-tools scripts/build_harmony.sh
 ```
+
+This creates `HarmonyClient/entry/build/default/outputs/default/entry-default-unsigned.hap` in release mode. A retail Huawei phone requires a Huawei-issued application certificate and provisioning profile before installation. A Mac Developer ID certificate cannot sign a HarmonyOS app. See [Huawei's signing and build instructions](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/ide-command-line-building-app).
+
+`scripts/sign_harmony.sh` accepts private signing paths through `HARMONY_KEYSTORE`, `HARMONY_CERTIFICATE`, `HARMONY_PROFILE`, and `HARMONY_PASSWORD_FILE`; the default key alias is `harmonyscreen`. Keep these inputs outside this repository. Its certificate-dependent execution is pending validation with an issued certificate; no self-signed or unsigned HAP is advertised as installable.
 
 The native client connects only to localhost:54322 through the HDC USB tunnel. Start with 1920×1200 at 30 FPS and zero rotation/flip. Higher resolutions and HiDPI need real-device validation. Never advertise an unsigned package as generally installable on retail Huawei phones.
 
@@ -51,6 +57,7 @@ swift test --package-path MacHost
 clang++ -std=c++17 -fsanitize=address,undefined tests/wire_test.cpp -o /tmp/harmonyscreen-wire-test
 /tmp/harmonyscreen-wire-test
 python3 scripts/test_hdc_transport.py  # one authorized USB phone required
+python3 scripts/test_host_stream.py    # running local host and ffprobe required
 ```
 
 See [transport and protocol design](docs/HDC-TRANSPORT.md) and [release checklist](docs/RELEASE.md). The retained AndroidClient and upstream scripts are reference material, not a HarmonyOS build or release route.
