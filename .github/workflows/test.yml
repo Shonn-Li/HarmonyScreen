@@ -1,0 +1,11 @@
+name: Test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --package-path MacHost
+      - run: clang++ -std=c++17 -fsanitize=address,undefined tests/wire_test.cpp -o /tmp/wire-test && /tmp/wire-test

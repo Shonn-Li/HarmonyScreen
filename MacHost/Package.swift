@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "SideScreen",
+    name: "HarmonyScreen",
     platforms: [
         // Floor is ScreenCaptureKit basics (12.3) + OSAllocatedUnfairLock /
         // SCStreamConfiguration.capturesAudio (13.0). CGVirtualDisplay is a
@@ -11,12 +11,12 @@ let package = Package(
     ],
     products: [
         .executable(
-            name: "SideScreen",
-            targets: ["SideScreen"])
+            name: "HarmonyScreen",
+            targets: ["HarmonyScreen"])
     ],
     targets: [
         .executableTarget(
-            name: "SideScreen",
+            name: "HarmonyScreen",
             dependencies: [],
             path: "Sources",
             cSettings: [
@@ -26,8 +26,8 @@ let package = Package(
                 .unsafeFlags(["-Xcc", "-fmodule-map-file=Sources/module.modulemap"])
             ]),
         .testTarget(
-            name: "SideScreenTests",
-            dependencies: ["SideScreen"],
+            name: "HarmonyScreenTests",
+            dependencies: ["HarmonyScreen"],
             path: "Tests/SideScreenTests",
             cSettings: [
                 .unsafeFlags(["-I", "Sources"])

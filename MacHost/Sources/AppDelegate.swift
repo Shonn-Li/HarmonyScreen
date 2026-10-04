@@ -5,13 +5,13 @@ import ApplicationServices
 import os.log
 @preconcurrency import ScreenCaptureKit
 
-// Debug file logger - writes to /tmp/sidescreen.log
+// Debug file logger - writes to /tmp/harmonyscreen.log
 func debugLog(_ message: String) {
     let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
     let line = "[\(timestamp)] \(message)\n"
     print(message)
     if let data = line.data(using: .utf8) {
-        let url = URL(fileURLWithPath: "/tmp/sidescreen.log")
+        let url = URL(fileURLWithPath: "/tmp/harmonyscreen.log")
         if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
             handle.write(data)
@@ -134,7 +134,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func refreshStatusIndicators() {
-        settings.adbInstalled = StatusDetector.adbInstalled()
+        settings.hdcInstalled = StatusDetector.hdcInstalled()
         settings.wifiConnected = StatusDetector.wifiReachable()
         settings.listeningAddress = LANAddressResolver.primaryIPv4()
 
@@ -161,14 +161,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let port = Int(settings.port)
         Task.detached { [weak self] in
             let devices = StatusDetector.usbDevices()
-            let reverseOK = StatusDetector.adbReverseConfigured(port: port)
+            let reverseOK = StatusDetector.hdcReverseConfigured(port: port)
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
                 
                 let isConnected = !devices.isEmpty
 
                 self.settings.usbDeviceConnected = isConnected
-                self.settings.adbReverseConfigured = reverseOK
+                self.settings.hdcReverseConfigured = reverseOK
 
                 // Self-healing USB bridge (level-triggered, not edge-triggered):
                 // whenever we are in USB mode with the server running and a
@@ -181,7 +181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     && self.settings.isRunning
                     && !reverseOK {
                     debugLog("🔌 USB bridge missing while running — (re)establishing adb reverse")
-                    Task { await self.setupADBReverse() }
+                    Task { await self.setupHDCReverse() }
                 }
             }
         }
@@ -317,7 +317,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "display.2", accessibilityDescription: "Side Screen")
+            button.image = NSImage(systemSymbolName: "display.2", accessibilityDescription: "HarmonyScreen")
         }
 
         // Items are rebuilt on every open (menuNeedsUpdate) so the menu always
@@ -432,96 +432,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Setup ADB reverse port forwarding for USB connection
-    func setupADBReverse() async {
-        let port = settings.port
-        print("🔌 Setting up ADB reverse for port \(port)...")
-        debugLog("🔌 setupADBReverse() invoked for port \(port)...")
-
-        await Task.detached(priority: .utility) {
-            // Try common adb paths
-            let adbPaths = [
-                "/usr/local/bin/adb",
-                "/opt/homebrew/bin/adb",
-                "~/Library/Android/sdk/platform-tools/adb",
-                "/Users/\(NSUserName())/Library/Android/sdk/platform-tools/adb"
-            ]
-
-            var adbPath: String?
-            for path in adbPaths {
-                let expandedPath = NSString(string: path).expandingTildeInPath
-                if FileManager.default.fileExists(atPath: expandedPath) {
-                    adbPath = expandedPath
-                    break
-                }
-            }
-
-            // Also try 'which adb' to find it in PATH
-            if adbPath == nil {
-                let whichProcess = Process()
-                whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-                whichProcess.arguments = ["adb"]
-                let whichPipe = Pipe()
-                whichProcess.standardOutput = whichPipe
-                whichProcess.standardError = FileHandle.nullDevice
-
-                do {
-                    try whichProcess.run()
-                    whichProcess.waitUntilExit()
-                    let data = whichPipe.fileHandleForReading.readDataToEndOfFile()
-                    if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                       !path.isEmpty {
-                        adbPath = path
-                    }
-                } catch {
-                    // Ignore
-                }
-            }
-
-            guard let finalAdbPath = adbPath else {
-                print("⚠️  ADB not found - USB connection may not work")
-                print("💡 Install Android SDK or run manually: adb reverse tcp:\(port) tcp:\(port)")
-                return
-            }
-
-            print("📱 Found ADB at: \(finalAdbPath)")
-
-            // Retry adb reverse up to 3 times — handles first-install authorization delay
-            for attempt in 1...3 {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: finalAdbPath)
-                process.arguments = ["reverse", "tcp:\(port)", "tcp:\(port)"]
-
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = pipe
-
-                do {
-                    try process.run()
-                    process.waitUntilExit()
-
-                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                    let output = String(data: data, encoding: .utf8) ?? ""
-
-                    if process.terminationStatus == 0 {
-                        print("✅ ADB reverse setup successful: tcp:\(port) -> tcp:\(port)")
-                        return
-                    } else {
-                        print("⚠️  ADB reverse attempt \(attempt)/3 failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
-                        if attempt < 3 {
-                            try? await Task.sleep(nanoseconds: 1_000_000_000)
-                        }
-                    }
-                } catch {
-                    print("⚠️  Failed to run ADB (attempt \(attempt)/3): \(error.localizedDescription)")
-                    if attempt < 3 {
-                        try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    }
-                }
-            }
-
-            print("💡 Make sure Android device is connected via USB with debugging enabled")
+    /// Establish the existing HDC reverse tunnel; do not implement USB authentication ourselves.
+    func setupHDCReverse() async {
+        let port = Int(settings.port)
+        let result = await Task.detached(priority: .utility) {
+            HDCBridge.configure(port: port)
         }.value
+        debugLog(result ? "HDC USB tunnel ready" : "HDC tunnel unavailable: connect exactly one authorized USB device")
     }
 
     @MainActor
@@ -576,7 +493,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 height: size.height,
                 refreshRate: settings.refreshRate,
                 hiDPI: settings.hiDPI,
-                name: "SideScreen"
+                name: "HarmonyScreen"
             )
 
             // Disable mirror mode (may fail if already in extend mode)
@@ -594,7 +511,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // For wireless mode, skip ADB entirely — the auth handshake gates LAN connections instead.
             await withTaskGroup(of: Void.self) { group in
                 if settings.connectionMode == .usb {
-                    group.addTask { await self.setupADBReverse() }
+                    group.addTask { await self.setupHDCReverse() }
                 } else {
                     debugLog("Wireless mode: skipping ADB setup")
                 }
@@ -614,7 +531,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Setup capture
             guard let displayID = virtualDisplayManager?.displayID else {
                 throw NSError(
-                    domain: "SideScreen.Startup",
+                    domain: "HarmonyScreen.Startup",
                     code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "The virtual display was created without a display ID."]
                 )
@@ -705,7 +622,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             guard let server = streamingServer else {
                 throw NSError(
-                    domain: "SideScreen.Startup",
+                    domain: "HarmonyScreen.Startup",
                     code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "The streaming server could not be created."]
                 )
@@ -1266,6 +1183,6 @@ extension AppDelegate: NSMenuDelegate {
         menu.addItem(settingsItem)
 
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Side Screen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit HarmonyScreen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 }

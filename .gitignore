@@ -51,7 +51,6 @@ dist/
 *.pem
 
 # Docs (local design docs)
-docs/
 
 # Temporary
 tmp/
@@ -61,3 +60,15 @@ temp/
 
 # Local ktlint binary (CI downloads its own)
 AndroidClient/ktlint
+
+# Private signing and HarmonyOS generated files
+**/oh_modules/
+**/.hvigor/
+**/local.properties
+*.p12
+*.p7b
+*.cer
+*.csr
+*.hap
+*.hsp
+**/build/

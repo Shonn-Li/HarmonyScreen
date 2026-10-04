@@ -116,7 +116,7 @@ struct SettingsView: View {
                     .onHover { headerHovered = $0 }
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Side Screen")
+                        Text("HarmonyScreen")
                             .font(.system(size: 20, weight: .bold, design: .rounded))
                         Text("Turn your tablet into a second display")
                             .font(.system(size: 12, weight: .medium))
@@ -140,7 +140,7 @@ struct SettingsView: View {
                         Button("Cancel", role: .cancel) { }
                         Button("Reset", role: .destructive) {
                             settings.resetToDefaults()
-                            if let window = NSApp.windows.first(where: { $0.title == "Side Screen" }) {
+                            if let window = NSApp.windows.first(where: { $0.title == "HarmonyScreen" }) {
                                 window.center()
                             }
                         }
@@ -520,8 +520,8 @@ struct SettingsView: View {
                                     Text("Changing the port invalidates existing pairings — re-scan the QR on each tablet.")
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
-                                } else if settings.port != 54321 {
-                                    Text("Custom port set — Android client must use the same port.")
+                                } else if settings.port != 54322 {
+                                    Text("Custom port set — HarmonyOS client must use the same port.")
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
                                 }
@@ -542,7 +542,7 @@ struct SettingsView: View {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text("Launch at Login")
                                                 .font(.system(size: 12, weight: .medium))
-                                            Text("Run SideScreen in the background automatically after you log in.")
+                                            Text("Run HarmonyScreen in the background automatically after you log in.")
                                                 .font(.system(size: 10))
                                                 .foregroundColor(.secondary)
                                         }
@@ -750,7 +750,7 @@ struct SettingsView: View {
                                 StatusRow(title: "Client Connected",
                                           status: settings.clientConnected ? "Yes" : "No",
                                           color: settings.clientConnected ? .green : .secondary,
-                                          hint: "Whether the Android client app currently has an active stream session.")
+                                          hint: "Whether the HarmonyOS client app currently has an active stream session.")
                                 StatusRow(
                                     title: ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 ? "Screen & System Audio" : "Screen Recording",
                                     status: settings.hasScreenRecordingPermission ? "Granted" : "Required",
@@ -771,12 +771,12 @@ struct SettingsView: View {
                                 // Mode-aware contextual rows
                                 Divider().padding(.vertical, 4)
                                 if settings.connectionMode == .usb {
-                                    StatusRow(title: "ADB installed",
-                                              status: settings.adbInstalled ? "Installed" : "Missing",
-                                              color: settings.adbInstalled ? .green : .red,
-                                              hint: "USB mode tunnels the TCP stream through the cable using `adb reverse`. Requires the `adb` command on the Mac. Searched paths: Homebrew, /usr/local/bin, ~/Library/Android/sdk/platform-tools, and PATH (`which adb`).")
-                                    if !settings.adbInstalled {
-                                        Text("brew install android-platform-tools")
+                                    StatusRow(title: "HDC installed",
+                                              status: settings.hdcInstalled ? "Installed" : "Missing",
+                                              color: settings.hdcInstalled ? .green : .red,
+                                              hint: "USB mode tunnels the TCP stream through the cable using `hdc rport`. Requires the `hdc` command on the Mac. Searched paths: Homebrew, /usr/local/bin, ~/.local/bin and DevEco Studio, and PATH (`which hdc`).")
+                                    if !settings.hdcInstalled {
+                                        Text("Install Huawei Command Line Tools (HDC)")
                                             .font(.system(size: 10, design: .monospaced))
                                             .padding(6)
                                             .background(Color.black.opacity(0.08))
@@ -784,14 +784,14 @@ struct SettingsView: View {
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .textSelection(.enabled)
                                     }
-                                    StatusRow(title: "ADB reverse",
-                                              status: settings.adbReverseConfigured ? "OK" : "Pending",
-                                              color: settings.adbReverseConfigured ? .green : .orange,
-                                              hint: "Whether `adb reverse tcp:\(settings.port) tcp:\(settings.port)` is currently configured. The Mac app sets this up automatically when you click Start. Goes green within ~2 seconds after the tablet is plugged in and authorized.")
+                                    StatusRow(title: "HDC reverse",
+                                              status: settings.hdcReverseConfigured ? "OK" : "Pending",
+                                              color: settings.hdcReverseConfigured ? .green : .orange,
+                                              hint: "Whether `hdc rport tcp:\(settings.port) tcp:\(settings.port)` is currently configured. The Mac app sets this up automatically when you click Start. Goes green within ~2 seconds after the tablet is plugged in and authorized.")
                                     StatusRow(title: "USB device",
                                               status: settings.usbDeviceConnected ? "Detected" : "Not detected",
                                               color: settings.usbDeviceConnected ? .green : .red,
-                                              hint: "An Android device authorized for ADB and visible to your Mac. Plug in via USB-C and tap Allow on the device's USB debugging prompt.")
+                                              hint: "A HarmonyOS device authorized for HDC and visible to your Mac. Plug in via USB-C and tap Allow on the device's USB debugging prompt.")
                                 } else {
                                     StatusRow(title: "WiFi",
                                               status: settings.wifiConnected ? "Connected" : "Disconnected",
@@ -1003,7 +1003,7 @@ struct SettingsView: View {
                                 }
                         }
                         .buttonStyle(.plain)
-                        .help("Quit Side Screen (⌘Q)")
+                        .help("Quit HarmonyScreen (⌘Q)")
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 14)
@@ -1196,7 +1196,7 @@ struct RotationButton: View {
 
 class DisplaySettings: ObservableObject {
     private let defaults = UserDefaults.standard
-    private let keyPrefix = "SideScreen_"
+    private let keyPrefix = "HarmonyScreen_"
 
     @Published var resolution: String {
         didSet { save("resolution", resolution) }
@@ -1267,8 +1267,8 @@ class DisplaySettings: ObservableObject {
     /// tablet shows black while the stream keeps flowing (issue #50). The
     /// setting only takes effect after logout, so this is a per-session fact.
     @Published var displaysHaveSeparateSpaces = true
-    @Published var adbInstalled = false
-    @Published var adbReverseConfigured = false
+    @Published var hdcInstalled = false
+    @Published var hdcReverseConfigured = false
     @Published var usbDeviceConnected = false
     @Published var wifiConnected = false
     @Published var listeningAddress: String?
@@ -1286,9 +1286,9 @@ class DisplaySettings: ObservableObject {
         self.bitrate = defaults.object(forKey: keyPrefix + "bitrate") as? Int ?? 1000  // Default: 1000 Mbps
         self.quality = defaults.string(forKey: keyPrefix + "quality") ?? "ultralow"  // Default: fastest encoding
         self.gamingBoost = defaults.bool(forKey: keyPrefix + "gamingBoost")
-        // Default port 54321 (was 8888 in <=0.7.1; 8888 collides with jupyter/splunk/HP printers).
+        // Default port 54322 (was 8888 in <=0.7.1; 8888 collides with jupyter/splunk/HP printers).
         // Existing users keep their saved value.
-        self.port = UInt16(defaults.object(forKey: keyPrefix + "port") as? Int ?? 54321)
+        self.port = UInt16(defaults.object(forKey: keyPrefix + "port") as? Int ?? 54322)
         self.rotation = defaults.object(forKey: keyPrefix + "rotation") as? Int ?? 0
         self.flipHorizontal = defaults.bool(forKey: keyPrefix + "flipHorizontal")
         self.flipVertical = defaults.bool(forKey: keyPrefix + "flipVertical")
@@ -1375,7 +1375,7 @@ class DisplaySettings: ObservableObject {
         bitrate = 1000  // Default: 1000 Mbps
         quality = "ultralow"  // Default: fastest encoding
         gamingBoost = false
-        port = 54321
+        port = 54322
         rotation = 0
         flipHorizontal = false
         flipVertical = false
@@ -1421,7 +1421,7 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
 
-        window.title = "Side Screen"
+        window.title = "HarmonyScreen"
         window.titlebarAppearsTransparent = true
         window.backgroundColor = .windowBackgroundColor
         window.isMovableByWindowBackground = true
@@ -1529,7 +1529,7 @@ struct WirelessSection: View {
                     } else {
                         Text("Generating QR…").foregroundColor(.secondary)
                     }
-                    Text("Scan this QR from Side Screen Android (Wireless tab)")
+                    Text("Scan this QR from HarmonyScreen HarmonyOS (Wireless tab)")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -1550,7 +1550,7 @@ struct WirelessSection: View {
                             .font(.system(size: 28, weight: .bold, design: .monospaced))
                             .kerning(3)
                             .textSelection(.enabled)
-                        Text("Type this one-time code in the Android app instead.\nA new code is issued after each pairing.")
+                        Text("Type this one-time code in the HarmonyOS app instead.\nA new code is issued after each pairing.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)

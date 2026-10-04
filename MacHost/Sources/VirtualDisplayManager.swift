@@ -56,7 +56,7 @@ class VirtualDisplayManager {
         // Set vendor/product IDs
         // Use width * 10000 + height so (3840,2400) ≠ (2400,3840) — avoids portrait/landscape collision
         descriptor.productID = UInt32((physW * 10000 + physH) & 0xFFFFFFFF)
-        descriptor.vendorID = 0xEEEE
+        descriptor.vendorID = 0xEEED
         descriptor.serialNum = 0x0001
 
         self.displayDescriptor = descriptor
@@ -264,9 +264,9 @@ class VirtualDisplayManager {
     func saveDisplayPosition() {
         guard let position = getDisplayPosition() else { return }
         let defaults = UserDefaults.standard
-        defaults.set(Int(position.x), forKey: "SideScreen_positionX")
-        defaults.set(Int(position.y), forKey: "SideScreen_positionY")
-        defaults.set(true, forKey: "SideScreen_hasPosition")
+        defaults.set(Int(position.x), forKey: "HarmonyScreen_positionX")
+        defaults.set(Int(position.y), forKey: "HarmonyScreen_positionY")
+        defaults.set(true, forKey: "HarmonyScreen_hasPosition")
         print("💾 Saved display position: (\(Int(position.x)), \(Int(position.y)))")
     }
 
@@ -278,13 +278,13 @@ class VirtualDisplayManager {
         defer { ensurePhysicalDisplayStaysMain() }
 
         let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: "SideScreen_hasPosition") else {
+        guard defaults.bool(forKey: "HarmonyScreen_hasPosition") else {
             print("📍 No saved display position found")
             return
         }
 
-        let x = defaults.integer(forKey: "SideScreen_positionX")
-        let y = defaults.integer(forKey: "SideScreen_positionY")
+        let x = defaults.integer(forKey: "HarmonyScreen_positionX")
+        let y = defaults.integer(forKey: "HarmonyScreen_positionY")
 
         // A position saved while the tablet was the Mac's only screen is the
         // main slot (0,0). Re-applying it with a physical display attached
@@ -304,14 +304,14 @@ class VirtualDisplayManager {
     }
 
     /// Online displays other than this virtual display. Filters by the vendor
-    /// ID our descriptor registers (0xEEEE) so a stale SideScreen display from
+    /// ID our descriptor registers (0xEEED) so a stale HarmonyScreen display from
     /// a previous instance is not mistaken for a physical screen.
     private func onlinePhysicalDisplays() -> [CGDirectDisplayID] {
         var online = [CGDirectDisplayID](repeating: 0, count: 16)
         var count: UInt32 = 0
         guard CGGetOnlineDisplayList(16, &online, &count) == .success else { return [] }
         return online.prefix(Int(count)).filter { id in
-            id != displayID && CGDisplayVendorNumber(id) != 0xEEEE
+            id != displayID && CGDisplayVendorNumber(id) != 0xEEED
         }
     }
 
