@@ -50,6 +50,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var screenCapture: ScreenCapture?
     var virtualDisplayManager: VirtualDisplayManager?
     var settings = DisplaySettings()
+    let supportPolicy = SupportPromptPolicy()
     var settingsWindow: SettingsWindowController?
     var statusItem: NSStatusItem?
     let pairedDeviceStore = PairedDeviceStore()
@@ -704,6 +705,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self = self else { return }
                 Task { @MainActor in
                     self.settings.clientConnected = false
+                    self.supportPolicy.endedSession()
                     // Final lastConnected snapshot at the disconnect moment, then
                     // freeze (currentWirelessDevice = nil stops the rolling update
                     // in refreshStatusIndicators).
@@ -724,6 +726,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor in
                     captured?.settings.currentFPS = fps
                     captured?.settings.currentBitrate = mbps
+                    if let self = captured {
+                        self.supportPolicy.observeFrames(at: ProcessInfo.processInfo.systemUptime,
+                                                         connected: self.settings.clientConnected, fps: fps)
+                    }
                 }
             }
 
@@ -795,6 +801,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tearDownServerResources(saveDisplayPosition: Bool, keepDisplay: Bool = false) {
+        supportPolicy.endedSession()
         if saveDisplayPosition {
             virtualDisplayManager?.saveDisplayPosition()
         }

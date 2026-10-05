@@ -1,9 +1,4 @@
-# These are supported funding model platforms
-
-github: [tranvuongquocdat]
-buy_me_a_coffee: tranvuongqk
-
-# Other platforms (uncomment if using)
-# ko_fi: your-username
-# patreon: your-username
-# custom: ['https://your-custom-link.com']
+# YouWo support checkout is pending owner verification.
+# The inherited SideScreen funding entries were removed to avoid sending
+# HarmonyScreen support payments to the wrong recipient. Upstream credit
+# remains in LICENSE and NOTICE. Configure a verified YouWo link before enabling.

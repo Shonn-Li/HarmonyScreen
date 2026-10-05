@@ -16,7 +16,7 @@ A free native HarmonyOS second-screen app for macOS, by [YouWo.ai](https://youwo
 
 | Component | Result |
 |---|---|
-| Mac arm64 build | Builds; 56 Swift tests passed |
+| Mac arm64 build | Builds; 59 Swift tests passed |
 | HDC on OpenHarmony 7.0.0.107 | 1 MiB exact USB round-trip passed |
 | Portable frame validation | Address/undefined-behavior sanitizer test passed |
 | Native HAP build | Release-mode arm64 HAP built with DevEco Studio 6.0.1.251 / SDK 6.0.1.112 (API 21); earlier API 24 build also passed |
@@ -120,3 +120,13 @@ return to HarmonyScreen to resume. Original SideScreen attribution is retained,
 and LICENSE/NOTICE are included in both application packages. General Huawei
 distribution signing and Apple notarization remain release blockers; see
 [release readiness](docs/RELEASE.md).
+
+### Optional support invitation (Mac 0.1.2)
+
+A quiet one-time invitation is implemented for the Mac app. It appears after
+five minutes of use, when the user clicks Stop, and never during streaming.
+No thanks, Escape or closing permanently dismisses the automatic invitation.
+All functionality stays free. The invitation remains disabled until a verified
+YouWo-owned one-time checkout is configured; no payment link is invented and
+no inherited upstream funding link is used. See [support setup](docs/SUPPORT.md).
+The Huawei receiver remains at 0.1.1; this change is in the Mac host only.

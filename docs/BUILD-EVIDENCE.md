@@ -99,3 +99,25 @@ Long-duration stability, measured frame rate and end-to-end latency, physical ca
 - General Huawei distribution signing, Apple notarization, physical replug and
   cold-install verification on additional devices remain incomplete. This is a
   free developer preview, not a universally installable end-user release.
+
+
+## Mac 0.1.2 support invitation and release video (2026-10-04)
+
+- Added a native, optional one-time support sheet to the Mac host. Qualification
+  requires five minutes of connected frame flow and an explicit Stop in the
+  visible, active settings window. Pairing, active streaming, automatic display
+  resizing and app exit do not trigger it. Choosing No thanks, closing, Escape
+  or opening checkout consumes the invitation. Settings reset does not clear it.
+- Checkout is gated on a reviewed public one-time HTTPS destination packaged
+  in SupportOffer.json. No YouWo payment link has been supplied or verified;
+  production builds remain inactive. The preview shows this explicitly.
+- 59 Swift tests passed, including persistence across policy recreation, all
+  eligibility gates, exclusion of sleep/disconnected/idle gaps, and URL/payment
+  type validation. Native SwiftUI preview rendered and visually reviewed.
+- Prepared a 36-second 1080p/30 FPS H.264/AAC video. The user-supplied early phone
+  capture and illustrative layout animation are labelled; no private chats or
+  signing data appear. Full video decode verification passed. Audio is original.
+- Mac Developer ID package built and verified. Live installation/interaction of
+  this update remains pending because the Mac was locked during final review.
+  Current phone receiver is unchanged at 0.1.1. Payment checkout and social
+  cross-posting await the owner's payment destination and platform/account.

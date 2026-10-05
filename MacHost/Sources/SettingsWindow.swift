@@ -81,6 +81,17 @@ struct SettingsView: View {
     @State private var customWidthText = ""
     @State private var customHeightText = ""
     @State private var daemonEnabled = false
+    @State private var showSupportPrompt = false
+
+    private func offerSupportIfEligible() {
+        guard let delegate = NSApp.delegate as? AppDelegate else { return }
+        if delegate.supportPolicy.takePresentation(configured: SupportOffer.configured != nil,
+                                                   streaming: settings.isRunning,
+                                                   windowVisible: delegate.settingsWindow?.window?.isVisible == true,
+                                                   appActive: NSApp.isActive) {
+            showSupportPrompt = true
+        }
+    }
 
     private var customWidthValue: Int? { Int(customWidthText.trimmingCharacters(in: .whitespaces)) }
     private var customHeightValue: Int? { Int(customHeightText.trimmingCharacters(in: .whitespaces)) }
@@ -123,6 +134,12 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                         Link("by YouWo.ai · Free", destination: URL(string: "https://youwo.ai")!)
                             .font(.system(size: 11, weight: .medium))
+                        if SupportOffer.configured != nil {
+                            Button("Support this free app") {
+                                (NSApp.delegate as? AppDelegate)?.supportPolicy.markPresented()
+                                showSupportPrompt = true
+                            }.buttonStyle(.link).font(.system(size: 11))
+                        }
                     }
 
                     Spacer()
@@ -953,9 +970,11 @@ struct SettingsView: View {
 
                     HStack(spacing: 12) {
                         Button(action: {
+                            let wasRunning = settings.isRunning
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 settings.toggleServer()
                             }
+                            if wasRunning { offerSupportIfEligible() }
                         }) {
                             HStack(spacing: 6) {
                                 Image(systemName: settings.isRunning ? "stop.fill" : "play.fill")
@@ -1039,6 +1058,9 @@ struct SettingsView: View {
             }
         }
         .frame(width: 480, height: 780)
+        .sheet(isPresented: $showSupportPrompt) {
+            SupportPromptView(offer: SupportOffer.configured) { showSupportPrompt = false }
+        }
     }
 
     /// Restart the app by launching a new instance and terminating current one
