@@ -1,15 +1,20 @@
 # Optional one-time support
 
-The Mac invitation is designed to appear once per macOS user profile, after at
-least five minutes of streaming, when the user clicks Stop in the visible, active
-Mac settings window. It never interrupts initial pairing or active
-streaming. Closing, Escape, declining or opening checkout all consume the single
-automatic invitation. Reset Settings and normal app updates do not reset it.
+The Mac invitation appears after each session with at least five minutes of
+connected frame flow, when the user clicks Stop in the visible, active Mac
+settings window. It never interrupts initial pairing or active streaming.
+Not now, closing, Escape or opening checkout dismisses that session's invitation
+only. The next qualifying session asks again; there is no permanent opt-out.
+Short sessions start fresh rather than inheriting the previous session's use.
+Temporary disconnects, automatic display rebuilds and connection-mode changes
+preserve the current session's use without triggering another invitation.
+Session state stays in memory; old 0.1.2 permanent-dismissal preferences are ignored.
 Users can voluntarily reopen it with Support this free app when configured.
 
 All features stay free. The app opens an external checkout only after a click,
 does not process card details, and never treats opening checkout as payment success.
-The prompt is only in the Mac app to avoid asking again on the Huawei receiver.
+The prompt is only in the Mac app. Each contribution is a one-time payment,
+even though the invitation can recur in later sessions.
 
 ## Payment destination required before activation
 

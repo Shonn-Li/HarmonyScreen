@@ -288,7 +288,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             _ = WirelessAuth.loadOrCreate()
         }
         if wasRunning {
-            await startServer()
+            await startServer(continuingSupportSession: true)
         }
     }
 
@@ -399,7 +399,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.preserveOtherDisplays()
             self.tearDownServerResources(saveDisplayPosition: true, keepDisplay: true)
             self.restoreOtherDisplays()
-            await self.startServer()
+            await self.startServer(continuingSupportSession: true)
         }
     }
 
@@ -554,7 +554,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func startServer() async {
+    func startServer(continuingSupportSession: Bool = false) async {
         let canStart = await MainActor.run { () -> Bool in
             guard !isStartingServer, !settings.isRunning else { return false }
             isStartingServer = true
@@ -705,7 +705,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self = self else { return }
                 Task { @MainActor in
                     self.settings.clientConnected = false
-                    self.supportPolicy.endedSession()
+                    self.supportPolicy.pauseCounting()
                     // Final lastConnected snapshot at the disconnect moment, then
                     // freeze (currentWirelessDevice = nil stops the rolling update
                     // in refreshStatusIndicators).
@@ -750,6 +750,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
 
             await MainActor.run {
+                supportPolicy.beginSession(continuing: continuingSupportSession)
                 settings.isRunning = true
             }
 

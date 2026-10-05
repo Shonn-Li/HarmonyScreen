@@ -121,11 +121,12 @@ and LICENSE/NOTICE are included in both application packages. General Huawei
 distribution signing and Apple notarization remain release blockers; see
 [release readiness](docs/RELEASE.md).
 
-### Optional support invitation (Mac 0.1.2)
+### Optional support invitation (Mac 0.1.3)
 
-A quiet one-time invitation is implemented for the Mac app. It appears after
-five minutes of use, when the user clicks Stop, and never during streaming.
-No thanks, Escape or closing permanently dismisses the automatic invitation.
+A quiet support invitation is implemented for the Mac app. It appears after
+each session with five minutes of use, when the user clicks Stop, and never
+during streaming. Not now, Escape or closing dismisses that session's request;
+the next qualifying session asks again. There is no permanent-dismissal option.
 All functionality stays free. The invitation remains disabled until a verified
 YouWo-owned one-time checkout is configured; no payment link is invented and
 no inherited upstream funding link is used. See [support setup](docs/SUPPORT.md).

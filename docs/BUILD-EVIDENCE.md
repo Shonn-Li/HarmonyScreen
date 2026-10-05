@@ -121,3 +121,22 @@ Long-duration stability, measured frame rate and end-to-end latency, physical ca
   this update remains pending because the Mac was locked during final review.
   Current phone receiver is unchanged at 0.1.1. Payment checkout and social
   cross-posting await the owner's payment destination and platform/account.
+
+## Mac 0.1.3 recurring support invitation (2026-10-04)
+
+- Supersedes the 0.1.2 permanent-dismissal behavior at the owner's request.
+  After each session with five minutes of connected frame flow, an explicit Stop
+  in the visible, active settings window can show the invitation. Not now,
+  closing, Escape or opening checkout dismisses that session's request only.
+- Session state stays in memory. New sessions qualify independently; temporary
+  disconnections and automatic display rebuilds preserve accumulated use without
+  creating extra prompts. Legacy permanent-dismissal preferences are ignored.
+- All 61 Swift tests passed, including repeated qualifying sessions, short
+  subsequent sessions, duplicate suppression and automatic restart continuity.
+  The updated native SwiftUI preview was rendered and visually reviewed.
+- The Developer ID signed Mac package built successfully and passed strict
+  signature verification. The installed Mac remains 0.1.1; app-control could
+  not resolve its window during this update. The Huawei receiver is unchanged.
+- No verified YouWo checkout has been provided, so the production invitation
+  remains inactive. Contributions remain one-time payments, not subscriptions.
+  Apple notarization and general Huawei distribution remain incomplete.

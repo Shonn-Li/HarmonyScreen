@@ -23,39 +23,52 @@ struct SupportOffer: Decodable {
 }
 
 /// The automatic invitation is never shown while streaming or without a real checkout.
-/// This preference is intentionally outside Reset Settings and is not versioned.
+/// Each new streaming session can qualify again; dismissal never persists across sessions.
 final class SupportPromptPolicy {
-    private let defaults: UserDefaults
-    private let prefix = "HarmonyScreen_support_"
     private var previousFrameTime: TimeInterval?
+    private var sessionRunning = false
     static let qualifyingSeconds: TimeInterval = 300
 
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    // Session state is deliberately in memory. Legacy permanent-dismissal preferences
+    // from 0.1.2 have no effect, including after an app update or relaunch.
+    private(set) var hasPrompted = false
+    private(set) var usedSeconds: TimeInterval = 0
 
-    var hasPrompted: Bool { defaults.bool(forKey: prefix + "presented") }
-    var usedSeconds: TimeInterval { defaults.double(forKey: prefix + "usedSeconds") }
+    func beginSession(continuing: Bool = false) {
+        if !continuing {
+            hasPrompted = false
+            usedSeconds = 0
+        }
+        previousFrameTime = nil
+        sessionRunning = true
+    }
 
     func observeFrames(at uptime: TimeInterval, connected: Bool, fps: Double) {
-        guard !hasPrompted, usedSeconds < Self.qualifyingSeconds else { previousFrameTime = nil; return }
+        guard sessionRunning, !hasPrompted, usedSeconds < Self.qualifyingSeconds else { previousFrameTime = nil; return }
         guard connected, fps > 0, uptime.isFinite else { previousFrameTime = nil; return }
         defer { previousFrameTime = uptime }
         guard let previous = previousFrameTime else { return }
         let elapsed = uptime - previous
         // Do not count long sleep/disconnect gaps as use.
         guard elapsed > 0, elapsed <= 5 else { return }
-        defaults.set(min(Self.qualifyingSeconds, usedSeconds + elapsed), forKey: prefix + "usedSeconds")
+        usedSeconds = min(Self.qualifyingSeconds, usedSeconds + elapsed)
     }
 
-    func endedSession() { previousFrameTime = nil }
+    func pauseCounting() { previousFrameTime = nil }
+
+    func endedSession() {
+        pauseCounting()
+        sessionRunning = false
+    }
 
     func takePresentation(configured: Bool, streaming: Bool, windowVisible: Bool, appActive: Bool) -> Bool {
-        guard configured, !streaming, windowVisible, appActive,
+        guard configured, !streaming, !sessionRunning, windowVisible, appActive,
               !hasPrompted, usedSeconds >= Self.qualifyingSeconds else { return false }
-        markPresented() // Save before showing/opening a browser, including crash and close cases.
+        markPresented() // Prevent another automatic invitation for this same session.
         return true
     }
 
-    func markPresented() { defaults.set(true, forKey: prefix + "presented") }
+    func markPresented() { hasPrompted = true }
 }
 
 struct SupportPromptView: View {
@@ -86,10 +99,10 @@ struct SupportPromptView: View {
                 }
                 .buttonStyle(.borderedProminent).tint(Color(red: 0.20, green: 0.40, blue: 0.32))
                 .controlSize(.large).disabled(offer?.url == nil)
-                Button("No thanks", action: dismiss)
+                Button("Not now", action: dismiss)
                     .buttonStyle(.bordered).controlSize(.large).keyboardShortcut(.cancelAction)
             }.padding(.top, 26)
-            Text("No subscription. All features stay free. We won’t ask again.")
+            Text("No subscription. All features stay free.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).padding(.top, 16)
             if offer == nil {
                 Text("Design preview · payment link not connected")
