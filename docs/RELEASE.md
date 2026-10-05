@@ -4,7 +4,7 @@ Completed: Mac build, Swift tests, HDC USB data round-trip, portable frame valid
 
 Required before an end-user HOS 7 release:
 
-- Native client compiled using official Command Line Tools 6.1.1.280 / SDK 6.1.1.125. Remaining SDK warning: its package-version validator rejects the project's intentional 0.1.0 preview version. Signing warning is expected until the certificate/profile are configured.
+- Native client compiled using DevEco Studio 6.0.1.251 / SDK 6.0.1.112 (API 21), matching the editor; an earlier API 24 command-line build also passed. Remaining SDK warning: its package-version validator rejects the project's intentional 0.1.0 preview version. Signing warning is expected until the certificate/profile are configured.
 - Obtain a Huawei application certificate and provisioning profile for com.shonnli.harmonyscreen.
 - Sign/install a HAP on an authorized device; do not ship private keys, profiles or device identifiers.
 - Verify first displayed frame, continuous video, resolution and HiDPI, unplug/replug, app backgrounding, host restart, malformed frame handling and decoder errors.

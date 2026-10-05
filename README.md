@@ -19,7 +19,7 @@ A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Base
 | Mac arm64 build | Builds; 51 Swift tests passed |
 | HDC on OpenHarmony 7.0.0.107 | 1 MiB exact USB round-trip passed |
 | Portable frame validation | Address/undefined-behavior sanitizer test passed |
-| Native HAP build | Release-mode arm64 HAP built with official Huawei Command Line Tools 6.1.1.280 / SDK 6.1.1.125 (API 24) |
+| Native HAP build | Release-mode arm64 HAP built with DevEco Studio 6.0.1.251 / SDK 6.0.1.112 (API 21); earlier API 24 build also passed |
 | Native HAP installation | Blocked by missing Huawei app certificate/profile; phone rejects unsigned HAP with error 9568320 |
 | Actual host video | 60 HEVC frames independently decoded at 1920×1200, locally and through an HDC USB forward/reverse path |
 | Video decoded and displayed on Huawei | Not yet verified |
@@ -38,11 +38,13 @@ Install official Huawei Command Line Tools. Place `hdc` plus its runtime depende
 
 ## HarmonyOS client
 
-`HarmonyClient` is an ArkTS Stage application with a native C++ surface decoder. It compiles against HarmonyOS 6.1.1 (API 24), with a minimum of HarmonyOS 5.0.1 (API 13). Compilation is verified; this minimum is not a claim of tested device coverage. Configure your own app signing through Huawei's supported process; private signing configuration must stay outside Git.
+`HarmonyClient` is an ArkTS Stage application with a native C++ surface decoder. It compiles against HarmonyOS 6.0.1 (API 21), with a minimum of HarmonyOS 5.0.1 (API 13). The target matches DevEco Studio 6.0.1 so opening the project does not fail SDK validation. Compilation is verified; this minimum is not a claim of tested device coverage. Configure your own app signing through Huawei's supported process; private signing configuration must stay outside Git.
 
 ```sh
-HARMONY_SDK_TOOLS=/path/to/command-line-tools scripts/build_harmony.sh
+scripts/build_harmony.sh
 ```
+
+The script uses the official SDK, Node and Java bundled in `/Applications/DevEco-Studio.app`. Set `HARMONY_DEVECO_APP` for another installation path, or `HARMONY_SDK_TOOLS` to official command-line tools containing a matching API 21 SDK.
 
 This creates `HarmonyClient/entry/build/default/outputs/default/entry-default-unsigned.hap` in release mode. A retail Huawei phone requires a Huawei-issued application certificate and provisioning profile before installation. A Mac Developer ID certificate cannot sign a HarmonyOS app. See [Huawei's signing and build instructions](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/ide-command-line-building-app).
 
