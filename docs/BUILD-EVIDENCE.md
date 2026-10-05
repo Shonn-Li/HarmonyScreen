@@ -140,3 +140,33 @@ Long-duration stability, measured frame rate and end-to-end latency, physical ca
 - No verified YouWo checkout has been provided, so the production invitation
   remains inactive. Contributions remain one-time payments, not subscriptions.
   Apple notarization and general Huawei distribution remain incomplete.
+
+## Mac and HarmonyOS 0.1.4 recovery and rotation (2026-10-04)
+
+- Reproduced the unreachable-host condition: phone visible to HDC, no reverse
+  tunnel, no listener on port 54322, and the installed 0.1.1 Mac process sampled
+  inside NSAlert.runModal after an automatic display restart failed.
+- Replaced the startup-error modal with a non-blocking status and delayed retries
+  (3 seconds increasing to a 30-second cap). Stop cancels retries, including a
+  later failure from an in-flight start. Existing virtual display identity is
+  retained during recovery. Startup errors are now written to the diagnostic log.
+- Native Follow phone now uses AUTO_ROTATION. The SDK documents this as following
+  the sensor regardless of rotation lock; AUTO_ROTATION_RESTRICTED respected that
+  lock. The foreground receiver continues to report its real viewport to the Mac.
+- Built and installed Developer ID signed Mac 0.1.4 and privately debug-signed
+  HarmonyOS 0.1.4 (versionCode 104). All 64 Swift tests passed, including retry,
+  backoff and stop-cancellation coverage. Strict Mac signature verification passed.
+- Observed live 3184×2232 → 2232×3184 → 3184×2232 phone viewports, matching host
+  capture sizes and first decoded frames after each resize. The virtual display
+  ID remained stable through these rotations. Direct phone screenshots confirmed
+  full-screen portrait and landscape output; no image stretching was introduced.
+- Tested automatic recovery by holding port 54322 with a temporary local test
+  listener for 25 seconds. The actual Mac UI showed Reconnecting automatically
+  with a usable Stop button. After port release, the Mac resumed listening and
+  the foreground phone displayed new frames without another Start click.
+- Verified Launch at Login enabled and streaming-on-launch enabled on the Mac.
+  Reboot and physical cable replug were not tested in this update.
+- Built the unsigned release-mode AppGallery `.app` archive and prepared listing
+  copy, reviewer setup and a privacy draft. Distribution signing, verified
+  publisher access, final privacy/contact details and Huawei review remain;
+  no AppGallery submission or publication is claimed.

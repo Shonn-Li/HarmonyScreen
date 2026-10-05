@@ -65,6 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// item, auto-start racing a manual click) must not build a second virtual
     /// display / server. Main-actor confined.
     private var isStartingServer = false
+    private var streamRecovery = StreamRecoveryPolicy()
     /// The effective refresh rate the running pipeline was built with — lets
     /// the refresh-rate observer skip restarts that would change nothing.
     private var lastAppliedRefreshRate: Int?
@@ -222,6 +223,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func refreshStatusIndicators() {
+        if !settings.isRunning, !isStartingServer,
+           streamRecovery.shouldRetry(at: ProcessInfo.processInfo.systemUptime) {
+            Task { @MainActor [weak self] in
+                guard let self, self.streamRecovery.shouldRetry(at: ProcessInfo.processInfo.systemUptime) else { return }
+                await self.startServer(continuingSupportSession: true)
+            }
+        }
         settings.hdcInstalled = StatusDetector.hdcInstalled()
         settings.wifiConnected = StatusDetector.wifiReachable()
         settings.listeningAddress = LANAddressResolver.primaryIPv4()
@@ -428,7 +436,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleServerFromMenu() {
-        if settings.isRunning {
+        if settings.isRunning || settings.isRecovering {
             stopServer()
         } else {
             Task { [weak self] in
@@ -452,7 +460,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         settings.onToggleServer = { [weak self] in
             guard let self else { return }
-            if self.settings.isRunning {
+            if self.settings.isRunning || self.settings.isRecovering {
                 self.stopServer()
             } else {
                 Task { [weak self] in
@@ -554,6 +562,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @MainActor
     func startServer(continuingSupportSession: Bool = false) async {
         let canStart = await MainActor.run { () -> Bool in
             guard !isStartingServer, !settings.isRunning else { return false }
@@ -564,13 +573,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             debugLog("startServer() ignored — already starting or already running")
             return
         }
-        defer {
-            Task { @MainActor [weak self] in self?.isStartingServer = false }
-        }
+        defer { isStartingServer = false }
+        streamRecovery.requestStart(continuing: continuingSupportSession)
         debugLog("🚀 startServer() invoked. Check permission: \(settings.hasScreenRecordingPermission)")
         guard settings.hasScreenRecordingPermission else {
             debugLog("❌ startServer aborted: Missing Screen Recording permission")
-            await showPermissionAlert()
+            streamRecovery.stop()
+            settings.isRecovering = false
+            settings.streamError = "Allow Screen Recording in System Settings, then click Start."
             return
         }
 
@@ -612,6 +622,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 group.addTask { try? await Task.sleep(nanoseconds: 500_000_000) }
             }
 
+            guard streamRecovery.requested else {
+                tearDownServerResources(saveDisplayPosition: false)
+                return
+            }
+
             try virtualDisplayManager?.selectMode(width: size.width, height: size.height, hiDPI: layout != nil || settings.hiDPI)
             restoreOtherDisplays()
             virtualDisplayManager?.restoreDisplayPosition()
@@ -644,6 +659,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let layout { screenCapture?.panelOutputSize = (layout.pixelWidth, layout.pixelHeight) }
             lastAppliedRefreshRate = settings.effectiveRefreshRate
             try await screenCapture?.setupForVirtualDisplay(displayID, refreshRate: settings.effectiveRefreshRate)
+            guard streamRecovery.requested else {
+                tearDownServerResources(saveDisplayPosition: false)
+                return
+            }
 
             // Setup server
             streamingServer = StreamingServer(port: settings.port)
@@ -741,6 +760,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
             try await server.start()
+            guard streamRecovery.requested else {
+                tearDownServerResources(saveDisplayPosition: false)
+                return
+            }
             screenCapture?.startStreaming(
                 to: server,
                 bitrateMbps: settings.effectiveBitrate,
@@ -751,20 +774,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             await MainActor.run {
                 supportPolicy.beginSession(continuing: continuingSupportSession)
+                streamRecovery.started()
+                settings.isRecovering = false
+                settings.streamError = nil
                 settings.isRunning = true
             }
 
             print("✅ Server started on port \(settings.port)")
         } catch {
-            print("❌ Failed to start: \(error)")
+            debugLog("Failed to start stream: \(error.localizedDescription)")
             await MainActor.run {
-                self.tearDownServerResources(saveDisplayPosition: false)
-
-                let alert = NSAlert()
-                alert.messageText = "Failed to Start Server"
-                alert.informativeText = error.localizedDescription
-                alert.alertStyle = .critical
-                alert.runModal()
+                self.tearDownServerResources(saveDisplayPosition: false, keepDisplay: streamRecovery.requested)
+                streamRecovery.failed(at: ProcessInfo.processInfo.systemUptime)
+                settings.isRecovering = streamRecovery.requested
+                settings.streamError = streamRecovery.requested ?
+                    "Reconnecting automatically. \(error.localizedDescription)" : nil
             }
         }
     }
@@ -827,6 +851,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func stopServer() {
+        streamRecovery.stop()
+        settings.isRecovering = false
+        settings.streamError = nil
         tearDownServerResources(saveDisplayPosition: true)
 
         print("⏹️ Server stopped")

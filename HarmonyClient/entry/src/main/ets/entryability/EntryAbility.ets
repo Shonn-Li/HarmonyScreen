@@ -14,7 +14,7 @@ export default class EntryAbility extends UIAbility {
           .then(() => win.setWindowSystemBarEnable([]))
           .then(() => win.setSpecificSystemBarEnabled('navigationIndicator', false))
           .catch(() => { console.warn('HarmonyScreen could not hide all system bars'); });
-        win.setPreferredOrientation(window.Orientation.AUTO_ROTATION_RESTRICTED).catch(() => {
+        win.setPreferredOrientation(window.Orientation.AUTO_ROTATION).catch(() => {
           console.warn('HarmonyScreen auto rotation could not be enabled');
         });
         win.setWindowKeepScreenOn(true).catch(() => {

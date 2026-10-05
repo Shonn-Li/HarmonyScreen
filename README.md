@@ -97,6 +97,14 @@ for the size calculation and the macOS multi-virtual-display recovery limitation
 
 ### Live FPS and everyday connection
 
+Mac and Huawei 0.1.4 restore automatic rotation and connection recovery. Follow
+phone uses the orientation sensor even with the system rotation lock enabled;
+the Mac resizes the desktop after the new viewport arrives. A rotation can briefly
+reconnect video. Failed Mac startup/reconfiguration now shows a status message
+and retries automatically rather than waiting in a blocking error dialog.
+New installations start streaming when the Mac app opens by default. An existing
+explicitly disabled startup preference is preserved.
+
 Tap the Huawei desktop to show the controls. **Stream FPS** measures successful
 video-decoder submissions to the phone display surface over the last second;
 it is not the physical panel refresh rate or a glass-to-glass latency measurement.
@@ -130,4 +138,4 @@ the next qualifying session asks again. There is no permanent-dismissal option.
 All functionality stays free. The invitation remains disabled until a verified
 YouWo-owned one-time checkout is configured; no payment link is invented and
 no inherited upstream funding link is used. See [support setup](docs/SUPPORT.md).
-The Huawei receiver remains at 0.1.1; this change is in the Mac host only.
+The support invitation is in the Mac host only.

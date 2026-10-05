@@ -30,7 +30,7 @@ struct Index {
     this.orientationPending = true;
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const mode = requested === 1 ? window.Orientation.PORTRAIT : requested === 2 ?
-      window.Orientation.LANDSCAPE : window.Orientation.AUTO_ROTATION_RESTRICTED;
+      window.Orientation.LANDSCAPE : window.Orientation.AUTO_ROTATION;
     window.getLastWindow(context).then((win: window.Window) => win.setPreferredOrientation(mode))
       .then(() => { this.appliedOrientation = requested; })
       .catch(() => { console.warn('HarmonyScreen orientation change was refused'); })

@@ -1,5 +1,13 @@
 # Release readiness
 
+0.1.4 is installed on the owner's Mac and Mate XT 2. It adds non-blocking host
+recovery, streaming on launch by default, and sensor-based follow-phone rotation
+even when the phone's general rotation lock is enabled. Landscape/portrait
+resizing and recovery from a deliberately occupied host port were verified.
+The AppGallery `.app` archive is built locally but unsigned. The signed-in Huawei
+portal requires developer real-name verification; store submission has not
+occurred. See [submission materials](APPGALLERY-SUBMISSION.md).
+
 Completed: Mac build, Swift tests, HDC USB data round-trip, portable frame validation, Mac Developer ID package signing, native arm64 HAP compilation in release mode, Huawei debug signing and installation on Mate XT 2, native full-screen 3184×2232 playback and automatic recovery after a Mac stream restart. Independent Mac HEVC decoding passed at 1920×1200 and 3184×2232.
 
 Required before an end-user HOS 7 release:

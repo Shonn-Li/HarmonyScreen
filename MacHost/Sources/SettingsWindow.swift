@@ -964,6 +964,10 @@ struct SettingsView: View {
 
                 // Footer
                 VStack(spacing: 0) {
+                    if let error = settings.streamError {
+                        Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true).padding(12)
+                    }
                     Rectangle()
                         .fill(Color.primary.opacity(0.06))
                         .frame(height: 1)
@@ -977,9 +981,9 @@ struct SettingsView: View {
                             if wasRunning { offerSupportIfEligible() }
                         }) {
                             HStack(spacing: 6) {
-                                Image(systemName: settings.isRunning ? "stop.fill" : "play.fill")
+                                Image(systemName: settings.isRunning || settings.isRecovering ? "stop.fill" : "play.fill")
                                     .font(.system(size: 12))
-                                Text(settings.isRunning ? "Stop" : "Start")
+                                Text(settings.isRunning || settings.isRecovering ? "Stop" : "Start")
                                     .font(.system(size: 13, weight: .medium))
                             }
                             .frame(width: 90)
@@ -1244,6 +1248,8 @@ struct RotationButton: View {
 // MARK: - Display Settings
 
 class DisplaySettings: ObservableObject {
+    @Published var isRecovering = false
+    @Published var streamError: String?
     private let defaults = UserDefaults.standard
     private let keyPrefix = "HarmonyScreen_"
 
@@ -1359,7 +1365,7 @@ class DisplaySettings: ObservableObject {
         self.touchEnabled = defaults.object(forKey: keyPrefix + "touchEnabled") as? Bool ?? true
         let modeRaw = defaults.string(forKey: keyPrefix + "connectionMode") ?? ConnectionMode.usb.rawValue
         self.connectionMode = ConnectionMode(rawValue: modeRaw) ?? .usb
-        self.autoStartStreamingOnLaunch = defaults.object(forKey: keyPrefix + "autoStartStreamingOnLaunch") as? Bool ?? false
+        self.autoStartStreamingOnLaunch = defaults.object(forKey: keyPrefix + "autoStartStreamingOnLaunch") as? Bool ?? true
         let startupRaw = defaults.string(forKey: keyPrefix + "startupMode") ?? modeRaw
         self.startupMode = ConnectionMode(rawValue: startupRaw) ?? .usb
 
@@ -1449,7 +1455,7 @@ class DisplaySettings: ObservableObject {
         customWidth = 1920
         customHeight = 1200
         touchEnabled = true
-        autoStartStreamingOnLaunch = false
+        autoStartStreamingOnLaunch = true
         startupMode = .usb
 
         print("Settings reset to defaults")
