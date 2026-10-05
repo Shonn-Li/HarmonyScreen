@@ -189,6 +189,30 @@ struct SettingsView: View {
                         // Display Configuration
                         FrostedGroupBox(title: "Display Configuration", icon: "display") {
                             VStack(alignment: .leading, spacing: 16) {
+                                Toggle("Fit desktop to Huawei automatically", isOn: $settings.autoFitPhone)
+                                if settings.autoFitPhone {
+                                    Toggle("Match Mac text size", isOn: $settings.matchMacScale)
+                                    Text(settings.phoneSizeSummary).font(.system(size: 11)).foregroundColor(.secondary)
+                                    Picker("Orientation", selection: $settings.phoneOrientation) {
+                                        Text("Follow phone").tag("auto")
+                                        Text("Portrait").tag("portrait")
+                                        Text("Landscape").tag("landscape")
+                                    }
+                                    Picker("Place beside main Mac display", selection: $settings.placementSide) {
+                                        Text("Left").tag("left")
+                                        Text("Right").tag("right")
+                                        Text("Above").tag("above")
+                                        Text("Below").tag("below")
+                                    }
+                                    Picker("Align edges", selection: $settings.placementAlignment) {
+                                        Text("Top / left").tag("start")
+                                        Text("Center").tag("center")
+                                        Text("Bottom / right").tag("end")
+                                    }
+                                    Text("Position follows macOS display scaling. Physical text size is estimated from the device's reported DPI.")
+                                        .font(.system(size: 10)).foregroundColor(.secondary)
+                                }
+                                if !settings.autoFitPhone {
                                 // Resolution
                                 VStack(alignment: .leading, spacing: 8) {
                                     HStack {
@@ -410,6 +434,7 @@ struct SettingsView: View {
                                     .padding(.top, 10)
                                 }
 
+                                }
                             }
                         }
 
@@ -1198,6 +1223,13 @@ class DisplaySettings: ObservableObject {
     private let defaults = UserDefaults.standard
     private let keyPrefix = "HarmonyScreen_"
 
+    @Published var autoFitPhone: Bool { didSet { save("autoFitPhone", autoFitPhone) } }
+    @Published var matchMacScale: Bool { didSet { save("matchMacScale", matchMacScale) } }
+    @Published var phoneOrientation: String { didSet { save("phoneOrientation", phoneOrientation) } }
+    @Published var placementSide: String { didSet { save("placementSide", placementSide) } }
+    @Published var placementAlignment: String { didSet { save("placementAlignment", placementAlignment) } }
+    @Published var phoneSizeSummary = "Waiting for the phone's screen size…"
+
     @Published var resolution: String {
         didSet { save("resolution", resolution) }
     }
@@ -1280,6 +1312,11 @@ class DisplaySettings: ObservableObject {
     var onToggleServer: (() -> Void)?
 
     init() {
+        self.autoFitPhone = defaults.object(forKey: keyPrefix + "autoFitPhone") as? Bool ?? true
+        self.matchMacScale = defaults.object(forKey: keyPrefix + "matchMacScale") as? Bool ?? true
+        self.phoneOrientation = defaults.string(forKey: keyPrefix + "phoneOrientation") ?? "auto"
+        self.placementSide = defaults.string(forKey: keyPrefix + "placementSide") ?? (defaults.integer(forKey: keyPrefix + "positionX") < 0 ? "left" : "right")
+        self.placementAlignment = defaults.string(forKey: keyPrefix + "placementAlignment") ?? "start"
         self.resolution = defaults.string(forKey: keyPrefix + "resolution") ?? "1920x1200"
         self.refreshRate = defaults.object(forKey: keyPrefix + "refreshRate") as? Int ?? 60  // Default: 60 — balanced for most tablets. 120 may saturate high-res panel pipelines.
         self.hiDPI = defaults.bool(forKey: keyPrefix + "hiDPI")
@@ -1369,6 +1406,11 @@ class DisplaySettings: ObservableObject {
             defaults.removeObject(forKey: keyPrefix + key)
         }
 
+        autoFitPhone = true
+        matchMacScale = true
+        phoneOrientation = "auto"
+        placementSide = "right"
+        placementAlignment = "start"
         resolution = "1920x1200"
         refreshRate = 120  // Default: highest FPS
         hiDPI = false

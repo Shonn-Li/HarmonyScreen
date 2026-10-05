@@ -30,36 +30,39 @@ class VirtualDisplayManager {
         height: Int,
         refreshRate: Int = 60,
         hiDPI: Bool = false,
-        name: String = "Virtual Display"
+        name: String = "Virtual Display",
+        physicalSizeMM: CGSize? = nil
     ) throws {
-        // Clean up existing display if any
-        destroyDisplay()
-
         // Physical pixels = 2x logical when HiDPI, 1x otherwise
         let physW = hiDPI ? width * 2 : width
         let physH = hiDPI ? height * 2 : height
 
-        // Create display descriptor
-        let descriptor = CGVirtualDisplayDescriptor()
-        descriptor.name = name
-        descriptor.maxPixelsWide = UInt32(physW)
-        descriptor.maxPixelsHigh = UInt32(physH)
+        if virtualDisplay == nil {
+            // Keep one identity across rotation/scaling. Recreating virtual displays
+            // while Sidecar is active can corrupt macOS capture's display mapping.
+            let descriptor = CGVirtualDisplayDescriptor()
+            descriptor.name = name
+            descriptor.maxPixelsWide = 8192
+            descriptor.maxPixelsHigh = 8192
 
-        // HiDPI needs high PPI so macOS recognises as Retina (≥200 PPI threshold)
-        // non-HiDPI stays at 110 PPI (typical tablet assumption)
-        let ppi: Double = hiDPI ? 220.0 : 110.0
-        descriptor.sizeInMillimeters = CGSize(
-            width: Double(physW) * 25.4 / ppi,
-            height: Double(physH) * 25.4 / ppi
-        )
+            // Prefer client panel measurements. Use the historical density
+            // estimate only when the client cannot report its physical size.
+            let ppi: Double = hiDPI ? 220.0 : 110.0
+            descriptor.sizeInMillimeters = physicalSizeMM ?? CGSize(
+                width: Double(physW) * 25.4 / ppi,
+                height: Double(physH) * 25.4 / ppi
+            )
 
-        // Set vendor/product IDs
-        // Use width * 10000 + height so (3840,2400) ≠ (2400,3840) — avoids portrait/landscape collision
-        descriptor.productID = UInt32((physW * 10000 + physH) & 0xFFFFFFFF)
-        descriptor.vendorID = 0xEEED
-        descriptor.serialNum = 0x0001
+            descriptor.productID = 0x484443
+            descriptor.vendorID = 0xEEED
+            descriptor.serialNum = 0x0001
 
-        self.displayDescriptor = descriptor
+            self.displayDescriptor = descriptor
+            guard let display = CGVirtualDisplay(descriptor: descriptor) else {
+                throw VirtualDisplayError.creationFailed("Failed to create CGVirtualDisplay")
+            }
+            self.virtualDisplay = display
+        }
 
         // Create display settings
         let settings = CGVirtualDisplaySettings()
@@ -85,12 +88,7 @@ class VirtualDisplayManager {
 
         self.displaySettings = settings
 
-        // Create virtual display
-        guard let display = CGVirtualDisplay(descriptor: descriptor) else {
-            throw VirtualDisplayError.creationFailed("Failed to create CGVirtualDisplay")
-        }
-
-        self.virtualDisplay = display
+        guard let display = virtualDisplay else { throw VirtualDisplayError.displayNotCreated }
 
         // Apply settings
         let result = display.apply(settings)
@@ -219,6 +217,21 @@ class VirtualDisplayManager {
         }
 
         print("✅ Extend mode enabled (mirror disabled)")
+    }
+
+    /// WindowServer may initially pick the 1x physical anchor. Select the
+    /// requested logical mode explicitly before capture/arrangement.
+    func selectMode(width: Int, height: Int, hiDPI: Bool) throws {
+        guard let id = displayID else { throw VirtualDisplayError.displayNotCreated }
+        let options = [kCGDisplayShowDuplicateLowResolutionModes: true] as CFDictionary
+        let modes = CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode] ?? []
+        let scale = hiDPI ? 2 : 1
+        guard let mode = modes.first(where: { $0.width == width && $0.height == height && $0.pixelWidth == width * scale && $0.pixelHeight == height * scale }) else {
+            throw VirtualDisplayError.configurationFailed("Requested desktop scale is unavailable")
+        }
+        guard CGDisplaySetDisplayMode(id, mode, nil) == .success else {
+            throw VirtualDisplayError.configurationFailed("Could not apply desktop scale")
+        }
     }
 
     /// Get current display position (origin)

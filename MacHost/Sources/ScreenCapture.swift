@@ -149,8 +149,10 @@ class ScreenCapture {
     /// This is what makes HiDPI usable on a tablet: macOS renders at 2x, SCStream
     /// downsamples to the client's ceiling before encode, and the client decodes
     /// a frame it can sustain — sharper than a 1x capture of the same size.
+    var panelOutputSize: (width: Int, height: Int)?
+
     func encodeSize(for codec: StreamCodec) -> (width: Int, height: Int) {
-        let phys = (displayWidth, displayHeight)
+        let phys = panelOutputSize ?? (displayWidth, displayHeight)
         // A reported limit is authoritative for both codecs: it is what the
         // client's own MediaCodec claims it can decode.
         if let limit = clientDecodeLimit {
@@ -360,7 +362,7 @@ class ScreenCapture {
         config.queueDepth = 4
         config.capturesAudio = false
         config.backgroundColor = .clear
-        config.scalesToFit = false
+        config.scalesToFit = true
 
         let scStream = SCStream(filter: filter, configuration: config, delegate: delegate)
         try scStream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .global(qos: .userInteractive))

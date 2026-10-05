@@ -29,6 +29,8 @@ private enum WireMessage {
     /// only. Sent ONLY to clients that sent clientSupportsDesktopGeometry —
     /// older clients disconnect on unknown message types.
     static let desktopGeometry: UInt8 = 13
+    static let phoneViewport: UInt8 = 14
+    static let phoneOrientation: UInt8 = 15
 }
 
 private extension NWEndpoint {
@@ -147,6 +149,9 @@ class StreamingServer {
     private let port: UInt16
     private var listener: NWListener?
     private var connection: NWConnection?
+    var onPhoneViewport: ((PhoneDisplayGeometry) -> Void)?
+    private var phoneSupportsOrientation = false
+    var phoneOrientation: UInt8 = 0
     var onClientConnected: (() -> Void)?
     var onClientDisconnected: (() -> Void)?
     /// Fired once per connection during protocol startup, BEFORE the display
@@ -375,6 +380,7 @@ class StreamingServer {
     }
 
     private func beginExistingProtocol(on conn: NWConnection) {
+        phoneSupportsOrientation = false
         startReceivingTouch()
 
         // Give new clients a short chance to opt in before the first frame.
@@ -574,6 +580,16 @@ class StreamingServer {
         desktopHeight = height
     }
 
+    func setPhoneOrientation(_ value: UInt8) {
+        networkQueue.async { [weak self] in
+            guard let self else { return }
+            self.phoneOrientation = min(value, 2)
+            if self.phoneSupportsOrientation {
+                self.connection?.send(content: Data([WireMessage.phoneOrientation, self.phoneOrientation]), completion: .contentProcessed { _ in })
+            }
+        }
+    }
+
     func setDisplaySize(width: Int, height: Int, rotation: Int = 0, flipHorizontal: Bool = false, flipVertical: Bool = false) {
         displayWidth = width
         displayHeight = height
@@ -757,6 +773,18 @@ class StreamingServer {
                         }
                     }
                 }
+
+            case WireMessage.phoneViewport:
+                guard inputBuffer.count >= 9 else { return }
+                let payload = (1...8).map { inputByte(at: $0) }
+                consumeInputBytes(9)
+                guard let viewport = PhoneDisplayGeometry.decode(payload) else {
+                    debugLog("Invalid phone viewport ignored")
+                    continue
+                }
+                phoneSupportsOrientation = true
+                connection.send(content: Data([WireMessage.phoneOrientation, phoneOrientation]), completion: .contentProcessed { _ in })
+                onPhoneViewport?(viewport)
 
             case WireMessage.clientSupportsDesktopGeometry:
                 // Payload-free opt-in (same convention as types 8 and 9), sent

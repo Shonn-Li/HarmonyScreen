@@ -79,3 +79,18 @@ See [transport and protocol design](docs/HDC-TRANSPORT.md) and [release checklis
 ## Attribution
 
 The Mac capture/encoder/server originated in SideScreen by Quoc Dat Tran and contributors, under MIT. New HDC integration and native HarmonyOS receiver work is copyright 2026 Shonn Li, also MIT. See LICENSE and NOTICE. This project is not affiliated with Huawei or Apple.
+
+### Automatic size and portrait (latest source)
+
+The Mac settings now offer **Fit desktop to Huawei automatically**, **Match Mac
+text size**, **Follow phone / Portrait / Landscape**, and side/edge alignment.
+Turn on auto-fit for a desktop that follows the receiver's usable panel. Matching
+Mac text size estimates physical scale from panel DPI and the Mac's current
+Displays setting; disable that option for native 2× Retina rendering. Follow
+phone respects HarmonyOS's rotation lock. Resizing briefly reconnects the stream.
+
+Verified on the connected Mate XT 2: full-panel 3184×2232 landscape and 2232×3184
+portrait, switching both ways with the same Mac display ID, and recalculating
+logical size after a Mac display-scale change. The iPad Sidecar display remained
+connected during these final tests. See [transport details](docs/HDC-TRANSPORT.md)
+for the size calculation and the macOS multi-virtual-display recovery limitation.

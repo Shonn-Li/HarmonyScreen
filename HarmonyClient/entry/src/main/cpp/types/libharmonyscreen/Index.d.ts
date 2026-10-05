@@ -4,3 +4,5 @@ export const status: () => string;
 export const frames: () => number;
 export const running: () => boolean;
 export const touch: (x: number, y: number, action: number) => void;
+export const viewport: (width: number, height: number, dpiX: number, dpiY: number) => void;
+export const orientation: () => number;

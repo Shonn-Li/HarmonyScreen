@@ -1,4 +1,7 @@
 import receiver from 'libharmonyscreen.so';
+import display from '@ohos.display';
+import window from '@ohos.window';
+import common from '@ohos.app.ability.common';
 
 @Entry
 @Component
@@ -8,6 +11,31 @@ struct Index {
   private connectRequested: boolean = true;
   private foreground: boolean = true;
   private retryAt: number = 0;
+  private appliedOrientation: number = -1;
+  private orientationPending: boolean = false;
+
+  private reportViewport(width: number, height: number): void {
+    try {
+      const screen = display.getDefaultDisplaySync();
+      const w = Math.round(vp2px(width));
+      const h = Math.round(vp2px(height));
+      receiver.viewport(w, h, screen.xDPI, screen.yDPI);
+      console.info(`HarmonyScreen viewport ${w}x${h}, DPI ${screen.xDPI}x${screen.yDPI}`);
+    } catch { console.warn('HarmonyScreen could not read the panel size'); }
+  }
+
+  private updateOrientation(): void {
+    const requested = receiver.orientation();
+    if (requested < 0 || requested === this.appliedOrientation || this.orientationPending) { return; }
+    this.orientationPending = true;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const mode = requested === 1 ? window.Orientation.PORTRAIT : requested === 2 ?
+      window.Orientation.LANDSCAPE : window.Orientation.AUTO_ROTATION_RESTRICTED;
+    window.getLastWindow(context).then((win: window.Window) => win.setPreferredOrientation(mode))
+      .then(() => { this.appliedOrientation = requested; })
+      .catch(() => { console.warn('HarmonyScreen orientation change was refused'); })
+      .finally(() => { this.orientationPending = false; });
+  }
   private hideControlsAt: number = 0;
   @State private message: string = 'Connect your Huawei by USB and start HarmonyScreen on the Mac.';
   @State private receivedFrames: number = 0;
@@ -33,6 +61,7 @@ struct Index {
 
   aboutToAppear(): void {
     this.timer = setInterval(() => {
+      if (this.foreground) { this.updateOrientation(); }
       if (this.active) {
         this.message = receiver.status();
         const frames = receiver.frames();
@@ -77,6 +106,7 @@ struct Index {
       // Keep one surface alive while controls appear/disappear above it.
       XComponent({ id: 'display', type: XComponentType.SURFACE, controller: this.controller })
         .width('100%').height('100%')
+        .onAreaChange((_old: Area, area: Area) => { this.reportViewport(Number(area.width), Number(area.height)); })
         .onLoad(() => { this.ready = true; this.connect(); })
         .onDestroy(() => { receiver.stop(); this.ready = false; this.active = false; });
 

@@ -46,3 +46,42 @@ Mac Developer ID signing, Apple notarization, Huawei debug signing, Huawei distr
 - A connected Huawei running OpenHarmony 7.0.0.107 accepted HDC reverse forwarding.
 - A 1 MiB random payload completed Mac → phone → Mac via HDC forward/reverse with exact byte equality.
 - This validates TCP carriage over USB, not hardware video decoding or app installation.
+
+## Automatic panel sizing and rotation
+
+The HarmonyOS receiver reports its actual full-screen XComponent viewport in
+physical pixels, on connection and whenever the area changes. `display.xDPI` and
+`yDPI` estimate the panel dimensions; UI `densityPixels` is used only for vp-to-px
+conversion and is not treated as physical PPI.
+
+- **Type 14, client → Mac:** eight payload bytes, four unsigned 14-bit values:
+  pixel width, pixel height, xDPI × 10, yDPI × 10. Each value uses two bytes of
+  seven data bits, high group first; both bytes have bit 7 set. Old hosts safely
+  skip these high-bit bytes as unknown types. Bounds: 320–8192 per side, 32 Mi
+  pixels total, DPI zero (unknown) or 50–1000. Invalid reports are ignored.
+- Type 14 also opts the receiver into **type 15, Mac → client:** one byte:
+  0 follows the phone (respecting rotation lock), 1 portrait, 2 landscape.
+  Type 15 is never sent to clients that have not sent a valid type 14.
+- The native receiver applies orientation to the HarmonyOS window. It does not
+  rotate the video texture: the Mac desktop is resized upright and type 1's
+  transform remains zero. Landscape and portrait keep their native pixel axes.
+
+Sizing: panel mm = viewport pixels / reported PPI × 25.4. With “Match Mac text
+size”, desktop points = panel mm × (main Mac desktop width / main Mac width in
+mm), rounded to even dimensions. Reported physical sizes are estimates. Unknown
+or suspicious DPI falls back to native 2× Retina sizing. Encoding remains at the
+panel's even pixel dimensions; macOS's 2× desktop render is resampled when the
+physical-size match requires a different scale. This is not pixel-perfect 1:1
+rendering in matched-size mode; turn off “Match Mac text size” for native 2×.
+
+Updates are debounced 900 ms. The virtual display object and ID survive rotation
+and scaling, avoiding unnecessary display detachments and reducing exposure to
+macOS's virtual-display capture mapping bug. The transport reconnects briefly.
+Left/right/above/below positioning uses current macOS logical bounds; other
+screens retain their positions. Native physical Mac remains main.
+
+If multiple virtual screens were already in a corrupt capture state, disconnect
+all virtual screens once and reconnect them; app restarts alone may not clear it.
+A fresh topology resolved the observed Sidecar/HarmonyScreen mix-up. This is a
+known OS limitation, not a guarantee that all future topology changes are safe:
+https://github.com/waydabber/BetterDisplay/discussions/1322

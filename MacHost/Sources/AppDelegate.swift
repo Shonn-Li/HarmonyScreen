@@ -67,6 +67,80 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// The effective refresh rate the running pipeline was built with — lets
     /// the refresh-rate observer skip restarts that would change nothing.
     private var lastAppliedRefreshRate: Int?
+    private var phoneGeometry: PhoneDisplayGeometry?
+    private var appliedPhoneLayout: PhoneDisplayLayout?
+    private var layoutWork: DispatchWorkItem?
+    private var preservedDisplayOrigins: [CGDirectDisplayID: CGPoint] = [:]
+
+    private func preserveOtherDisplays() {
+        preservedDisplayOrigins = Dictionary(uniqueKeysWithValues: NSScreen.screens.compactMap { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+                  CGDisplayVendorNumber(id) != 0xEEED else { return nil }
+            return (id, CGDisplayBounds(id).origin)
+        })
+    }
+
+    private func restoreOtherDisplays() {
+        var config: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&config) == .success, let config else { return }
+        for (id, p) in preservedDisplayOrigins where CGDisplayIsOnline(id) != 0 {
+            CGConfigureDisplayOrigin(config, id, Int32(p.x), Int32(p.y))
+        }
+        CGCompleteDisplayConfiguration(config, .forSession)
+    }
+
+    private var orientationCode: UInt8 {
+        settings.phoneOrientation == "portrait" ? 1 : settings.phoneOrientation == "landscape" ? 2 : 0
+    }
+
+    private func referenceDisplay() -> CGDirectDisplayID {
+        let main = CGMainDisplayID()
+        if main != virtualDisplayManager?.displayID { return main }
+        return NSScreen.screens.compactMap {
+            $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        }.first { CGDisplayIsBuiltin($0) != 0 } ?? main
+    }
+
+    private func phoneLayout() -> PhoneDisplayLayout? {
+        guard settings.autoFitPhone, let phone = phoneGeometry else { return nil }
+        let reference = referenceDisplay()
+        return phone.layout(matchMac: settings.matchMacScale,
+                            referenceBounds: CGDisplayBounds(reference), referenceMM: CGDisplayScreenSize(reference))
+    }
+
+    private func arrangePhoneDisplay() {
+        guard settings.autoFitPhone, let manager = virtualDisplayManager, let id = manager.displayID else { return }
+        let bounds = CGDisplayBounds(id)
+        let origin = DisplayPlacement.origin(reference: CGDisplayBounds(referenceDisplay()), desktop: bounds.size,
+                                             side: settings.placementSide, alignment: settings.placementAlignment)
+        let snapped = CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
+        if bounds.origin != snapped {
+            try? manager.setDisplayPosition(x: Int32(snapped.x), y: Int32(snapped.y))
+        }
+    }
+
+    private func schedulePhoneLayout() {
+        layoutWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if self.isStartingServer { self.schedulePhoneLayout(); return }
+            let layout = self.phoneLayout()
+            if let layout {
+                var summary = "\(layout.pixelWidth) × \(layout.pixelHeight) pixels · desktop \(layout.logicalWidth) × \(layout.logicalHeight)"
+                if let mm = layout.millimeters {
+                    summary += String(format: "\nEstimated panel %.1f × %.1f cm", mm.width / 10, mm.height / 10)
+                } else { summary += "\nPanel DPI unavailable; using native Retina size" }
+                self.settings.phoneSizeSummary = summary
+            }
+            guard self.settings.isRunning else { return }
+            if layout != self.appliedPhoneLayout {
+                self.restartRunningServer(reason: "Phone or Mac display geometry changed")
+            } else { self.arrangePhoneDisplay() }
+        }
+        layoutWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(900), execute: work)
+    }
+
     var isDaemonMode = false // Deprecated: keeping variable for ABI compatibility but unused
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -80,6 +154,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Setup settings observers
         setupSettingsObservers()
+        if let values = UserDefaults.standard.array(forKey: "HarmonyScreen_phoneGeometry") as? [Double], values.count == 4,
+           (320...8192).contains(values[0]), (320...8192).contains(values[1]) {
+            phoneGeometry = PhoneDisplayGeometry(width: Int(values[0]), height: Int(values[1]), dpiX: values[2], dpiY: values[3])
+        }
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .sink { [weak self] _ in self?.schedulePhoneLayout() }.store(in: &cancellables)
+        Publishers.CombineLatest(settings.$autoFitPhone, settings.$matchMacScale)
+            .dropFirst().sink { [weak self] _ in self?.schedulePhoneLayout() }.store(in: &cancellables)
+        Publishers.CombineLatest(settings.$placementSide, settings.$placementAlignment)
+            .dropFirst().sink { [weak self] _ in self?.schedulePhoneLayout() }.store(in: &cancellables)
+        settings.$phoneOrientation.dropFirst().sink { [weak self] value in
+            self?.streamingServer?.setPhoneOrientation(value == "portrait" ? 1 : value == "landscape" ? 2 : 0)
+        }.store(in: &cancellables)
 
         // Check permissions
         Task {
@@ -308,7 +395,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             guard self.settings.isRunning else { return }
             debugLog("\(reason) — restarting server to rebuild virtual display")
-            self.stopServer()
+            self.preserveOtherDisplays()
+            self.tearDownServerResources(saveDisplayPosition: true, keepDisplay: true)
+            self.restoreOtherDisplays()
             await self.startServer()
         }
     }
@@ -485,15 +574,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
+            preserveOtherDisplays()
             // Create virtual display and run ADB setup in parallel
-            virtualDisplayManager = VirtualDisplayManager()
-            let size = settings.resolutionSize
+            if virtualDisplayManager == nil { virtualDisplayManager = VirtualDisplayManager() }
+            let layout = phoneLayout()
+            appliedPhoneLayout = layout
+            let size = layout.map { (width: $0.logicalWidth, height: $0.logicalHeight) } ?? settings.resolutionSize
             try virtualDisplayManager?.createDisplay(
                 width: size.width,
                 height: size.height,
                 refreshRate: settings.refreshRate,
-                hiDPI: settings.hiDPI,
-                name: "HarmonyScreen"
+                hiDPI: layout != nil || settings.hiDPI,
+                name: "HarmonyScreen",
+                physicalSizeMM: layout?.millimeters
             )
 
             // Disable mirror mode (may fail if already in extend mode)
@@ -518,7 +611,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 group.addTask { try? await Task.sleep(nanoseconds: 500_000_000) }
             }
 
+            try virtualDisplayManager?.selectMode(width: size.width, height: size.height, hiDPI: layout != nil || settings.hiDPI)
+            restoreOtherDisplays()
             virtualDisplayManager?.restoreDisplayPosition()
+            arrangePhoneDisplay()
 
             // Verify display is registered in the system
             if let vdm = virtualDisplayManager {
@@ -544,12 +640,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self.settings.captureMethod = method
                 }
             }
+            if let layout { screenCapture?.panelOutputSize = (layout.pixelWidth, layout.pixelHeight) }
             lastAppliedRefreshRate = settings.effectiveRefreshRate
             try await screenCapture?.setupForVirtualDisplay(displayID, refreshRate: settings.effectiveRefreshRate)
 
             // Setup server
             streamingServer = StreamingServer(port: settings.port)
             streamingServer?.touchEnabled = settings.touchEnabled
+            streamingServer?.phoneOrientation = orientationCode
+            streamingServer?.onPhoneViewport = { [weak self] geometry in
+                DispatchQueue.main.async {
+                    guard let self, self.phoneGeometry != geometry else { return }
+                    self.phoneGeometry = geometry
+                    UserDefaults.standard.set([Double(geometry.width), Double(geometry.height), geometry.dpiX, geometry.dpiY], forKey: "HarmonyScreen_phoneGeometry")
+                    debugLog("Phone viewport: \(geometry.width)x\(geometry.height), reported DPI \(geometry.dpiX)x\(geometry.dpiY)")
+                    self.schedulePhoneLayout()
+                }
+            }
             if settings.connectionMode == .wireless {
                 streamingServer?.expectedAuthToken = WirelessAuth.loadOrCreate()
                 configurePairingCode(on: streamingServer)
@@ -566,9 +673,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // selects its decoder from it, so a friendlier number here makes it
             // check capabilities against a resolution it will never receive. The
             // logical desktop travels separately, for display only.
-            let initialEncode = ScreenCapture.physicalSize(for: displayID)
+            let initialEncode = screenCapture?.encodeSize(for: .hevc) ?? ScreenCapture.physicalSize(for: displayID)
             streamingServer?.setDesktopSize(width: size.width, height: size.height)
-            streamingServer?.setDisplaySize(width: initialEncode.width, height: initialEncode.height, rotation: settings.rotation, flipHorizontal: settings.flipHorizontal, flipVertical: settings.flipVertical)
+            streamingServer?.setDisplaySize(width: initialEncode.width, height: initialEncode.height, rotation: layout == nil ? settings.rotation : 0, flipHorizontal: layout == nil && settings.flipHorizontal, flipVertical: layout == nil && settings.flipVertical)
             streamingServer?.onClientConnected = { [weak self] in
                 guard let self = self else { return }
                 self.screenCapture?.requestKeyframeOrReplayCachedFrame(force: true)
@@ -587,7 +694,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // stream's SPS will carry, so it is what the client must size
                 // its decoder for.
                 self.streamingServer?.setDesktopSize(width: size.width, height: size.height)
-                self.streamingServer?.setDisplaySize(width: enc.width, height: enc.height, rotation: self.settings.rotation, flipHorizontal: self.settings.flipHorizontal, flipVertical: self.settings.flipVertical)
+                self.streamingServer?.setDisplaySize(width: enc.width, height: enc.height, rotation: layout == nil ? self.settings.rotation : 0, flipHorizontal: layout == nil && self.settings.flipHorizontal, flipVertical: layout == nil && self.settings.flipVertical)
             }
             streamingServer?.onKeyframeRequested = { [weak self] force in
                 self?.screenCapture?.requestKeyframeOrReplayCachedFrame(force: force)
@@ -687,7 +794,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func tearDownServerResources(saveDisplayPosition: Bool) {
+    private func tearDownServerResources(saveDisplayPosition: Bool, keepDisplay: Bool = false) {
         if saveDisplayPosition {
             virtualDisplayManager?.saveDisplayPosition()
         }
@@ -696,11 +803,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         screenCapture?.stopStreaming()
         streamingServer?.stop()
-        virtualDisplayManager?.destroyDisplay()
+        if !keepDisplay { virtualDisplayManager?.destroyDisplay() }
 
         screenCapture = nil
         streamingServer = nil
-        virtualDisplayManager = nil
+        if !keepDisplay { virtualDisplayManager = nil }
         currentWirelessDevice = nil
 
         settings.isRunning = false

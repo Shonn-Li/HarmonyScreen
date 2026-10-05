@@ -51,3 +51,26 @@ These checks do **not** establish successful native on-device video playback.
 ## Still unverified
 
 Long-duration stability, measured frame rate and end-to-end latency, physical cable unplug/replug, background/foreground behavior, touch/audio, other device models/orientations, general distribution signing, and Mac notarization.
+
+## Automatic sizing verification — 2026-10-04
+
+- Signed receiver update installed successfully on the previously registered
+  Mate XT 2. Full-panel viewport metadata: 3184×2232 / 2232×3184;
+  reported x/y DPI approximately 383.1/383.3 (about 211×148 mm unfolded).
+- Landscape/portrait/landscape/portrait changes confirmed with direct device
+  screenshots, not only a successful build or handshake. Final mode follows
+  the phone and respects its rotation lock.
+- Mac at 1728×1117 logical points: Huawei matched-size desktop 1060×742 or
+  742×1060, left/top aligned. At Mac 2056×1329: portrait desktop 882×1258,
+  encoded output still 2232×3184. Restored Mac to its original scaling.
+- Mac virtual display ID stayed stable across these changes. Built-in remained
+  main and iPad Sidecar retained its right-side arrangement.
+- Caught macOS capturing the wrong virtual display through both SCStream and
+  CGDisplayStream after repeated display recreation. Reconnected all virtual
+  displays once to clear the corrupted mapping, and changed the app to keep
+  its virtual-display object while resizing. Final capture uses SCStream.
+- 56 Swift tests passed, including viewport bounds, portrait dimensions,
+  proportional scaling, edge attachment, and fragmented/coalesced protocol input.
+- Mac app Developer ID signed; not notarized. Receiver debug signing remains
+  device-specific. Physical fold/unfold and sensor movement are not independently
+  tested; orientation requests and resulting real device window sizes are tested.
