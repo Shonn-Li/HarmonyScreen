@@ -67,6 +67,8 @@ AndroidClient/ktlint
 **/.hvigor/
 **/.cxx/
 **/local.properties
+HarmonyClient/.clangd
+HarmonyClient/.clang-tidy
 *.p12
 *.p7b
 *.cer

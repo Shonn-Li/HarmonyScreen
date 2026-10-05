@@ -15,6 +15,7 @@ These checks do **not** establish successful native on-device video playback.
 - DevEco Studio 6.0.1.251 rejects a project targeting 6.1.1(24) during editor sync.
 - The current project targets 6.0.1(21), matching the installed editor's bundled SDK 6.0.1.112.
 - Release-mode native C++, ArkTS compilation and HAP packaging passed using the editor's bundled tools. `scripts/build_harmony.sh` uses this toolchain by default; the minimum API remains 13.
+- DevEco project sync and its native compile also passed after reopening this configuration.
 - The earlier API 24 build and device transport evidence below remain historical evidence, not a phone-playback result.
 
 ## Native client
