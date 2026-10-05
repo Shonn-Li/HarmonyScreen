@@ -14,6 +14,6 @@ else
   export DEVECO_SDK_HOME="$DEVECO_APP/Contents/sdk"
   export PATH="$NODE_HOME/bin:$DEVECO_APP/Contents/tools/ohpm/bin:$DEVECO_APP/Contents/tools/hvigor/bin:$PATH"
 fi
-cd "$ROOT/HarmonyClient"
+cd "${HARMONY_CLIENT_DIR:-$ROOT/HarmonyClient}"
 ohpm install --all
 hvigorw --mode module -p product=default -p module=entry@default -p buildMode=release assembleHap --no-daemon

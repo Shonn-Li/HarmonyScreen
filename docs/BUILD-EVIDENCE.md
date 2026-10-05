@@ -27,8 +27,10 @@ These checks do **not** establish successful native on-device video playback.
 - Release-mode HAP contains no development source map or local user-directory path.
 - Minimum API: 13; original target API: 24, current target API: 21. This is build configuration, not tested platform coverage.
 - Connected test phone reports OpenHarmony 7.0.0.107 / API 26.
-- Unsigned installation was attempted once and rejected with `9568320: no signature file`.
-- Huawei-issued application certificate and device provisioning profile are still required. The web console requires developer identity verification before issuing them for the owner's account.
+- The original unsigned installation was rejected with `9568320: no signature file`.
+- On October 4, DevEco automatic signing generated a Huawei debug certificate/profile after account sign-in and USB reconnection. After linking the signing config to the default build product, signed HAP packaging passed and HDC reported `install bundle successfully` on the Mate XT 2.
+- A second signed build using `scripts/build_harmony_signed.py` also passed, staging the private configuration outside tracked source. The device-specific signed HAP and signing material are private and are not public release assets.
+- Launch is currently blocked by the phone's lock screen (`10106102`). No lock-screen bypass was attempted. Earlier web-console and Application Agent identity-verification notices did not prevent this DevEco debug-signing route; they do not establish public distribution eligibility.
 
 ## Mac and USB video transport
 
@@ -39,4 +41,4 @@ These checks do **not** establish successful native on-device video playback.
 
 ## Still unverified
 
-Signed HAP installation, native surface creation, the phone's hardware decoder, displayed frames, clarity at native panel resolution, end-to-end latency, reconnect/background behavior, and Mac notarization.
+Native surface creation, the phone's hardware decoder, displayed frames, clarity at native panel resolution, end-to-end latency, reconnect/background behavior, general distribution signing, and Mac notarization.

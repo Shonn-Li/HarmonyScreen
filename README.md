@@ -2,7 +2,7 @@
 
 A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Based on [SideScreen](https://github.com/tranvuongquocdat/SideScreen), with its MIT license and attribution preserved.
 
-**Status: developer preview. Both the Mac host and native HarmonyOS HAP build. HDC USB transport and Mac HEVC output are tested. Huawei app signing and on-phone playback remain pending. Do not download this expecting a finished HOS 7 display app yet.**
+**Status: developer preview. The Mac host and native HarmonyOS HAP build. Huawei debug signing and installation on a Mate XT 2 succeeded. HDC USB transport and Mac HEVC output are tested; on-phone video playback remains pending. Do not download this expecting a finished HOS 7 display app yet.**
 
 ## What exists
 
@@ -20,7 +20,7 @@ A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Base
 | HDC on OpenHarmony 7.0.0.107 | 1 MiB exact USB round-trip passed |
 | Portable frame validation | Address/undefined-behavior sanitizer test passed |
 | Native HAP build | Release-mode arm64 HAP built with DevEco Studio 6.0.1.251 / SDK 6.0.1.112 (API 21); earlier API 24 build also passed |
-| Native HAP installation | Blocked by missing Huawei app certificate/profile; phone rejects unsigned HAP with error 9568320 |
+| Native HAP installation | DevEco-generated Huawei debug profile signed the HAP; installation on Mate XT 2 succeeded |
 | Actual host video | 60 HEVC frames independently decoded at 1920×1200, locally and through an HDC USB forward/reverse path |
 | Video decoded and displayed on Huawei | Not yet verified |
 | Touch, native Wi-Fi pairing, audio | Not enabled in the native preview |
@@ -49,6 +49,16 @@ The script uses the official SDK, Node and Java bundled in `/Applications/DevEco
 This creates `HarmonyClient/entry/build/default/outputs/default/entry-default-unsigned.hap` in release mode. A retail Huawei phone requires a Huawei-issued application certificate and provisioning profile before installation. A Mac Developer ID certificate cannot sign a HarmonyOS app. See [Huawei's signing and build instructions](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/ide-command-line-building-app).
 
 `scripts/sign_harmony.sh` accepts private signing paths through `HARMONY_KEYSTORE`, `HARMONY_CERTIFICATE`, `HARMONY_PROFILE`, and `HARMONY_PASSWORD_FILE`; the default key alias is `harmonyscreen`. Keep these inputs outside this repository. Its certificate-dependent execution is pending validation with an issued certificate; no self-signed or unsigned HAP is advertised as installable.
+
+For DevEco automatic signing, save the generated JSON build profile outside the repository, then restore the public profile with its empty `signingConfigs`. Build privately without putting signing inputs back into the tracked source:
+
+```sh
+python3 scripts/build_harmony_signed.py \
+  --profile /private/path/deveco-build-profile.private.json5 \
+  --output /private/path/HarmonyScreen-device-debug.hap
+```
+
+This route has produced a signed HAP using DevEco's generated credentials. It stages a temporary project, preserves existing output files, and leaves the public build profile unchanged. The debug HAP contains a device provisioning profile: keep it private, not in GitHub release assets. It is not a general AppGallery distribution package.
 
 The native client connects only to localhost:54322 through the HDC USB tunnel. Start with 1920×1200 at 30 FPS and zero rotation/flip. Higher resolutions and HiDPI need real-device validation. Never advertise an unsigned package as generally installable on retail Huawei phones.
 
