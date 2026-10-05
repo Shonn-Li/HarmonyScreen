@@ -71,6 +71,7 @@ swift test --package-path MacHost
 clang++ -std=c++17 -fsanitize=address,undefined tests/wire_test.cpp -o /tmp/harmonyscreen-wire-test
 /tmp/harmonyscreen-wire-test
 python3 scripts/test_hdc_transport.py  # one authorized USB phone required
+python3 scripts/test_hdc_recovery.py   # running host + one phone; briefly drops its tunnel
 python3 scripts/test_host_stream.py    # running local host and ffprobe required
 ```
 
@@ -104,6 +105,9 @@ reconnect video. Failed Mac startup/reconfiguration now shows a status message
 and retries automatically rather than waiting in a blocking error dialog.
 New installations start streaming when the Mac app opens by default. An existing
 explicitly disabled startup preference is preserved.
+
+Mac 0.1.5 keeps HDC USB available even when Wireless is selected or remembered
+at startup. The native Huawei 0.1.4 receiver does not need an update for this fix.
 
 Tap the Huawei desktop to show the controls. **Stream FPS** measures successful
 video-decoder submissions to the phone display surface over the last second;

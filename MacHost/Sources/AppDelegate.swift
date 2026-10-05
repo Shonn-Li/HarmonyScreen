@@ -267,13 +267,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.settings.hdcReverseConfigured = reverseOK
 
                 // Self-healing USB bridge (level-triggered, not edge-triggered):
-                // whenever we are in USB mode with the server running and a
-                // device present but HDC reverse missing, (re)establish it.
+                // whenever the server is running and an authorized device is
+                // present but HDC reverse is missing, (re)establish it. Wireless
+                // mode also accepts loopback clients; it must not disable USB.
                 // Covers replug, HDC server restart, etc. The server lifecycle
                 // is NOT tied to device events — it stays up and the tablet
                 // reconnects via its own connect button.
-                if self.settings.connectionMode == .usb
-                    && isConnected
+                if isConnected
                     && self.settings.isRunning
                     && !reverseOK {
                     debugLog("🔌 USB bridge missing while running — (re)establishing HDC reverse")
@@ -611,14 +611,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 settings.displayCreated = true
             }
 
-            // Run ADB setup (USB only) and display init wait in parallel.
-            // For wireless mode, skip ADB entirely — the auth handshake gates LAN connections instead.
+            // USB is available in both modes. Wireless only enables additional
+            // authenticated LAN clients; the native HarmonyOS app uses HDC.
             await withTaskGroup(of: Void.self) { group in
-                if settings.connectionMode == .usb {
-                    group.addTask { await self.setupHDCReverse() }
-                } else {
-                    debugLog("Wireless mode: skipping ADB setup")
-                }
+                group.addTask { await self.setupHDCReverse() }
                 group.addTask { try? await Task.sleep(nanoseconds: 500_000_000) }
             }
 

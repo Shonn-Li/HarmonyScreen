@@ -1601,7 +1601,7 @@ struct WirelessSection: View {
                     } else {
                         Text("Generating QR…").foregroundColor(.secondary)
                     }
-                    Text("Scan this QR from HarmonyScreen HarmonyOS (Wireless tab)")
+                    Text("Scan this QR with a compatible wireless client.\nThe native HarmonyOS app connects over USB.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -1622,7 +1622,7 @@ struct WirelessSection: View {
                             .font(.system(size: 28, weight: .bold, design: .monospaced))
                             .kerning(3)
                             .textSelection(.enabled)
-                        Text("Type this one-time code in the HarmonyOS app instead.\nA new code is issued after each pairing.")
+                        Text("Enter this code in a compatible wireless client.\nA new code is issued after each pairing.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
