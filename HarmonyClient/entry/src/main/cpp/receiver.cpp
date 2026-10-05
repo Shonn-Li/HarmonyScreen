@@ -30,6 +30,8 @@ public:
         if (OH_NativeWindow_CreateNativeWindowFromSurfaceId(surface, &window_) != 0 || !window_) {
             setStatus("Cannot open display surface"); return false;
         }
+        // Fit the complete desktop without distorting it when panel and stream ratios differ.
+        OH_NativeWindow_NativeWindowSetScalingModeV2(window_, OH_SCALING_MODE_SCALE_FIT_V2);
         stopped_ = false; displayed_ = 0;
         worker_ = std::thread([this, port] { run(port); });
         return true;
@@ -44,6 +46,7 @@ public:
     }
     std::string status() { std::lock_guard<std::mutex> l(statusMutex_); return status_; }
     uint64_t frames() const { return displayed_; }
+    bool running() const { return !stopped_; }
     void touch(float x, float y, int32_t action) {
         if (stopped_ || x < 0 || x > 1 || y < 0 || y > 1 || action < 0 || action > 2) return;
         uint8_t packet[14] = {2,1}; // Wire touch payload is little endian on both supported hosts.
@@ -187,6 +190,7 @@ napi_value Start(napi_env env,napi_callback_info info) {
 napi_value Stop(napi_env env,napi_callback_info) { receiver.stop(); napi_value v; napi_get_undefined(env,&v); return v; }
 napi_value Status(napi_env env,napi_callback_info) { napi_value v; auto s = receiver.status(); napi_create_string_utf8(env,s.c_str(),s.size(),&v); return v; }
 napi_value Frames(napi_env env,napi_callback_info) { napi_value v; napi_create_double(env,double(receiver.frames()),&v); return v; }
+napi_value Running(napi_env env,napi_callback_info) { napi_value v; napi_get_boolean(env,receiver.running(),&v); return v; }
 napi_value Touch(napi_env env,napi_callback_info info) {
     size_t count=3; napi_value args[3]; napi_get_cb_info(env,info,&count,args,nullptr,nullptr);
     double x=0,y=0; int32_t action=0;
@@ -200,8 +204,9 @@ napi_value Init(napi_env env,napi_value exports) {
         {"stop",nullptr,Stop,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"status",nullptr,Status,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"frames",nullptr,Frames,nullptr,nullptr,nullptr,napi_default,nullptr},
+        {"running",nullptr,Running,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"touch",nullptr,Touch,nullptr,nullptr,nullptr,napi_default,nullptr}};
-    napi_define_properties(env,exports,5,methods); return exports;
+    napi_define_properties(env,exports,6,methods); return exports;
 }
 napi_module module = {1,0,nullptr,Init,"harmonyscreen",nullptr,{0}};
 }

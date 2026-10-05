@@ -30,7 +30,16 @@ These checks do **not** establish successful native on-device video playback.
 - The original unsigned installation was rejected with `9568320: no signature file`.
 - On October 4, DevEco automatic signing generated a Huawei debug certificate/profile after account sign-in and USB reconnection. After linking the signing config to the default build product, signed HAP packaging passed and HDC reported `install bundle successfully` on the Mate XT 2.
 - A second signed build using `scripts/build_harmony_signed.py` also passed, staging the private configuration outside tracked source. The device-specific signed HAP and signing material are private and are not public release assets.
-- Launch is currently blocked by the phone's lock screen (`10106102`). No lock-screen bypass was attempted. Earlier web-console and Application Agent identity-verification notices did not prevent this DevEco debug-signing route; they do not establish public distribution eligibility.
+- Initial launch was blocked by the phone's lock screen (`10106102`). The owner subsequently unlocked it and supplied a screenshot of native video with 826 rendered frames. Earlier web-console and Application Agent identity-verification notices did not prevent this DevEco debug-signing route; they do not establish public distribution eligibility.
+
+## Full-screen phone validation
+
+- Signed full-screen update built, installed and launched successfully on the authorized Mate XT 2 / API 26.
+- The Mac uses custom 1592×1116 with HiDPI enabled and a configured 30 FPS. A 30-frame independent HEVC decode verified the encoded dimensions are 3184×2232.
+- A screenshot captured directly from the phone verified the Mac desktop fills its 3184×2232 panel, with no app header/footer or phone status/navigation bars. Screenshots containing the owner's desktop are retained locally rather than committed.
+- The XComponent surface stays mounted while controls overlay it. Controls hide after video arrives; tap/back reveal them. The native surface uses aspect-preserving fit for mismatched stream/panel sizes.
+- After the Mac stream was stopped, the phone displayed a connection error overlay. Restarting the host restored the video and hid the overlay automatically, without another connection action on the phone.
+- No sustained frame-rate, latency, or cable unplug/replug benchmark has been performed. A configured 30 FPS is not a measured throughput claim.
 
 ## Mac and USB video transport
 
@@ -41,4 +50,4 @@ These checks do **not** establish successful native on-device video playback.
 
 ## Still unverified
 
-Native surface creation, the phone's hardware decoder, displayed frames, clarity at native panel resolution, end-to-end latency, reconnect/background behavior, general distribution signing, and Mac notarization.
+Long-duration stability, measured frame rate and end-to-end latency, physical cable unplug/replug, background/foreground behavior, touch/audio, other device models/orientations, general distribution signing, and Mac notarization.

@@ -10,6 +10,10 @@ export default class EntryAbility extends UIAbility {
         }
       });
       stage.getMainWindow().then((win: window.Window) => {
+        win.setWindowLayoutFullScreen(true)
+          .then(() => win.setWindowSystemBarEnable([]))
+          .then(() => win.setSpecificSystemBarEnabled('navigationIndicator', false))
+          .catch(() => { console.warn('HarmonyScreen could not hide all system bars'); });
         win.setWindowKeepScreenOn(true).catch(() => {
           console.warn('HarmonyScreen could not keep the screen awake');
         });

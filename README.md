@@ -2,7 +2,7 @@
 
 A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Based on [SideScreen](https://github.com/tranvuongquocdat/SideScreen), with its MIT license and attribution preserved.
 
-**Status: developer preview. The Mac host and native HarmonyOS HAP build. Huawei debug signing and installation on a Mate XT 2 succeeded. HDC USB transport and Mac HEVC output are tested; on-phone video playback remains pending. Do not download this expecting a finished HOS 7 display app yet.**
+**Status: developer preview. Signed native playback on Mate XT 2 is verified over HDC USB, including full-screen 3184×2232 video and recovery after a Mac stream restart. Public assets remain a Mac preview; the device-specific debug HAP is private. General distribution, broad device testing, touch/audio and Mac notarization remain incomplete.**
 
 ## What exists
 
@@ -22,7 +22,7 @@ A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Base
 | Native HAP build | Release-mode arm64 HAP built with DevEco Studio 6.0.1.251 / SDK 6.0.1.112 (API 21); earlier API 24 build also passed |
 | Native HAP installation | DevEco-generated Huawei debug profile signed the HAP; installation on Mate XT 2 succeeded |
 | Actual host video | 60 HEVC frames independently decoded at 1920×1200, locally and through an HDC USB forward/reverse path |
-| Video decoded and displayed on Huawei | Not yet verified |
+| Video decoded and displayed on Huawei | Verified on Mate XT 2 at 3184×2232, full-screen; Mac stream stop/start recovered automatically |
 | Touch, native Wi-Fi pairing, audio | Not enabled in the native preview |
 | Apple notarization | Not completed |
 
@@ -60,7 +60,9 @@ python3 scripts/build_harmony_signed.py \
 
 This route has produced a signed HAP using DevEco's generated credentials. It stages a temporary project, preserves existing output files, and leaves the public build profile unchanged. The debug HAP contains a device provisioning profile: keep it private, not in GitHub release assets. It is not a general AppGallery distribution package.
 
-The native client connects only to localhost:54322 through the HDC USB tunnel. Start with 1920×1200 at 30 FPS and zero rotation/flip. Higher resolutions and HiDPI need real-device validation. Never advertise an unsigned package as generally installable on retail Huawei phones.
+The native client connects only to localhost:54322 through the HDC USB tunnel. It connects when opened, hides its overlay after video arrives, and retries interrupted streams while the page is visible. Tap the desktop to toggle controls; the back gesture also reveals hidden controls. Manual Disconnect stops automatic retries. This receiver remains display-only and does not send taps to the Mac.
+
+Verified unfolded Mate XT 2 setup: custom **1592×1116**, **HiDPI on**, **30 FPS**, zero rotation/flip. This produces **3184×2232** encoded pixels and fills the matching phone panel with Retina-sized desktop text. The native surface fits other aspect ratios without stretching. Other resolutions, orientations and device models still need validation. Never advertise a device-specific debug package as generally installable on retail Huawei phones.
 
 ## Tests
 
