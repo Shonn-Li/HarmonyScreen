@@ -37,8 +37,11 @@ struct Index {
       .finally(() => { this.orientationPending = false; });
   }
   private hideControlsAt: number = 0;
+  private statsLogAt: number = 0;
   @State private message: string = 'Connect your Huawei by USB and start HarmonyScreen on the Mac.';
   @State private receivedFrames: number = 0;
+  @State private displayFPS: number = 0;
+  @State private showFPS: boolean = false;
   @State private active: boolean = false;
   @State private ready: boolean = false;
   @State private controlsVisible: boolean = true;
@@ -54,6 +57,7 @@ struct Index {
     }
     this.retryAt = Date.now() + 3000;
     this.receivedFrames = 0;
+    this.displayFPS = 0;
     this.active = receiver.start(this.controller.getXComponentSurfaceId(), portNumber);
     this.message = this.active ? 'Connecting to your Mac…' : receiver.status();
     this.hideControlsAt = Date.now() + 2500;
@@ -69,8 +73,14 @@ struct Index {
           console.info('HarmonyScreen: first video frame displayed');
         }
         this.receivedFrames = frames;
+        this.displayFPS = receiver.fps();
+        if (frames > 0 && Date.now() >= this.statsLogAt) {
+          console.info(`HarmonyScreen receiver: ${this.displayFPS.toFixed(1)} FPS; ${frames} frames rendered`);
+          this.statsLogAt = Date.now() + 5000;
+        }
         if (!receiver.running()) {
           this.active = false;
+          this.displayFPS = 0;
           this.controlsVisible = true;
           this.retryAt = Date.now() + 3000;
         } else if (frames > 0 && Date.now() >= this.hideControlsAt) {
@@ -87,6 +97,7 @@ struct Index {
     this.foreground = false;
     receiver.stop();
     this.active = false;
+    this.displayFPS = 0;
   }
   aboutToDisappear(): void {
     clearInterval(this.timer);
@@ -99,6 +110,12 @@ struct Index {
       return true;
     }
     return false;
+  }
+
+  private openYouWo(): void {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    context.startAbility({ action: 'ohos.want.action.viewData', uri: 'https://youwo.ai' })
+      .catch(() => { this.message = 'Visit YouWo.ai in your browser'; });
   }
 
   build() {
@@ -119,19 +136,41 @@ struct Index {
           }
         });
 
+      if (this.showFPS && !this.controlsVisible && this.active) {
+        Column() {
+          Row() {
+            Blank();
+            Text(`${this.displayFPS.toFixed(1)} FPS`).fontSize(14).fontColor('#b9f3df')
+              .padding(10).backgroundColor('#C0111318').borderRadius(10);
+          }
+          Blank();
+        }.padding(16).width('100%').height('100%').hitTestBehavior(HitTestMode.None);
+      }
+
       if (this.controlsVisible) {
         Column({ space: 12 }) {
           Row({ space: 16 }) {
             Column({ space: 4 }) {
               Text('HarmonyScreen').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#b9f3df');
+              Text('by YouWo.ai · Free').fontSize(12).fontColor('#b9f3df')
+                .onClick(() => { this.openYouWo(); });
               Text(this.message).fontSize(14).fontColor('#eeeeee');
             }.alignItems(HorizontalAlign.Start).layoutWeight(1);
             if (this.receivedFrames > 0) {
-              Text(`${this.receivedFrames} frames`).fontSize(12).fontColor('#cccccc');
+              Text(`${this.displayFPS.toFixed(1)} FPS`).fontSize(16).fontWeight(FontWeight.Bold)
+                .fontColor('#b9f3df');
               Button('Hide controls').onClick(() => { this.controlsVisible = false; });
             }
           }.padding(16).width('100%').backgroundColor('#D9111318').borderRadius(16);
           Blank();
+          if (this.receivedFrames > 0) {
+            Row({ space: 12 }) {
+              Text('Stream FPS · fewer updates when the desktop is still').fontSize(12)
+                .fontColor('#eeeeee').layoutWeight(1);
+              Button(this.showFPS ? 'FPS always on' : 'Keep FPS visible')
+                .onClick(() => { this.showFPS = !this.showFPS; this.hideControlsAt = Date.now() + 5000; });
+            }.padding(12).width('100%').backgroundColor('#D9111318').borderRadius(12);
+          }
           Row({ space: 12 }) {
             Text('Tap the screen to show or hide controls').fontSize(14).fontColor('#eeeeee')
               .layoutWeight(1);
@@ -146,6 +185,7 @@ struct Index {
                   receiver.stop();
                   this.active = false;
                   this.receivedFrames = 0;
+                  this.displayFPS = 0;
                   this.message = 'Disconnected';
                 } else {
                   this.connectRequested = true;

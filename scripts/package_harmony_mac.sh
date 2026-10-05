@@ -8,6 +8,7 @@ BIN=$(swift build --package-path "$ROOT/MacHost" -c release --arch "$ARCH" --sho
 APP="$ROOT/dist/HarmonyScreen.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/HarmonyScreen" "$APP/Contents/MacOS/HarmonyScreen"
+cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
 python3 - "$APP" "$VERSION" <<'PY'
 import plistlib,sys,pathlib
 p=pathlib.Path(sys.argv[1])/'Contents/Info.plist'

@@ -9,3 +9,4 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift test --package-path MacHost
       - run: clang++ -std=c++17 -fsanitize=address,undefined tests/wire_test.cpp -o /tmp/wire-test && /tmp/wire-test
+      - run: clang++ -std=c++17 -fsanitize=address,undefined tests/frame_rate_test.cpp -o /tmp/frame-rate-test && /tmp/frame-rate-test

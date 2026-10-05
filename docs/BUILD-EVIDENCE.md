@@ -74,3 +74,28 @@ Long-duration stability, measured frame rate and end-to-end latency, physical ca
 - Mac app Developer ID signed; not notarized. Receiver debug signing remains
   device-specific. Physical fold/unfold and sensor movement are not independently
   tested; orientation requests and resulting real device window sizes are tested.
+
+
+## 0.1.1 FPS and free YouWo.ai branding (2026-10-04)
+
+- Replaced the cumulative frame label with a rolling one-second receiver FPS
+  measurement. It counts successful decoder-to-surface submissions, not physical
+  panel refresh or end-to-end latency. Total frames remain in diagnostics.
+- Installed the signed 0.1.1 native build on the owner's Mate XT 2. A direct phone
+  screenshot showed the YouWo.ai credit, 26.3 FPS during warm-up, and the Keep FPS
+  visible control. Later samples reached 28–30 FPS with the Mac set to 30 FPS.
+- Portrait playback remains 2232×3184, with a 742×1060 logical desktop under the
+  current Mac scaling. The Mac app update and receiver process restart both
+  recovered playback. Existing Sidecar remained attached.
+- 56 Swift tests passed. Portable frame validation and the new frame-rate test
+  passed under AddressSanitizer and UndefinedBehaviorSanitizer. The rate test
+  covers partial sampling windows, steady 30 FPS, idle decay to zero and reset.
+- Native release build and private debug signing succeeded; Mac Developer ID
+  signing and strict signature verification succeeded. LICENSE and NOTICE are
+  included in both packages. Device-specific HAP and screenshots stay private.
+- Idle waits at protocol message boundaries no longer disconnect merely because
+  the desktop sends no new frames. Incomplete message payloads retain their
+  receive timeout. This does not promise recovery from every cable/OS failure.
+- General Huawei distribution signing, Apple notarization, physical replug and
+  cold-install verification on additional devices remain incomplete. This is a
+  free developer preview, not a universally installable end-user release.

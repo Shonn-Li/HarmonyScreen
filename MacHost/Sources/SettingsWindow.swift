@@ -121,6 +121,8 @@ struct SettingsView: View {
                         Text("Turn your tablet into a second display")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.secondary)
+                        Link("by YouWo.ai · Free", destination: URL(string: "https://youwo.ai")!)
+                            .font(.system(size: 11, weight: .medium))
                     }
 
                     Spacer()
@@ -920,7 +922,7 @@ struct SettingsView: View {
                             FrostedGroupBox(title: "Performance", icon: "speedometer") {
                                 HStack {
                                     VStack(alignment: .leading) {
-                                        Text("FPS")
+                                        Text("Sending FPS")
                                             .font(.system(size: 10))
                                             .foregroundColor(.secondary)
                                         Text(String(format: "%.1f", settings.currentFPS))

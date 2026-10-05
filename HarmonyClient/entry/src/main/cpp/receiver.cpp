@@ -1,6 +1,7 @@
 // Copyright 2026 Shonn Li. MIT license.
 // Native HarmonyOS surface decoder. USB data uses HDC rport, never ADB.
 #include "wire.h"
+#include "frame_rate.h"
 #include <napi/native_api.h>
 #include <native_window/external_window.h>
 #include <multimedia/player_framework/native_avcodec_videodecoder.h>
@@ -16,6 +17,7 @@
 #include <condition_variable>
 #include <cstring>
 #include <cmath>
+#include <cerrno>
 #include <deque>
 #include <mutex>
 #include <string>
@@ -33,7 +35,7 @@ public:
         }
         // Fit the complete desktop without distorting it when panel and stream ratios differ.
         OH_NativeWindow_NativeWindowSetScalingModeV2(window_, OH_SCALING_MODE_SCALE_FIT_V2);
-        stopped_ = false; displayed_ = 0;
+        stopped_ = false; displayed_ = 0; frameRate_.reset();
         worker_ = std::thread([this, port] { run(port); });
         return true;
     }
@@ -47,6 +49,7 @@ public:
     }
     std::string status() { std::lock_guard<std::mutex> l(statusMutex_); return status_; }
     uint64_t frames() const { return displayed_; }
+    double fps() { return stopped_ ? 0.0 : frameRate_.fps(); }
     bool running() const { return !stopped_; }
     int orientation() const { return orientation_; }
     void viewport(uint32_t w, uint32_t h, double dpiX, double dpiY) {
@@ -70,6 +73,7 @@ public:
 private:
     std::atomic<bool> stopped_{true};
     std::atomic<uint64_t> displayed_{0};
+    harmony::FrameRate frameRate_;
     std::atomic<int> decoderError_{0};
     std::thread worker_;
     std::mutex socketMutex_, statusMutex_, queueMutex_;
@@ -93,10 +97,14 @@ private:
     std::deque<Slot> slots_;
     uint32_t width_ = 0, height_ = 0;
     void setStatus(const std::string& value) { std::lock_guard<std::mutex> l(statusMutex_); status_ = value; }
-    void read(void* dst, size_t size) {
+    void read(void* dst, size_t size, bool idleAllowed = false) {
         auto p = static_cast<uint8_t*>(dst);
         while (size && !stopped_) {
             auto n = recv(fd_,p,size,0);
+            if (n < 0 && errno == EINTR) continue;
+            // A static desktop can legitimately send no new frames. Only wait
+            // indefinitely at a message boundary; incomplete payloads still time out.
+            if (n < 0 && idleAllowed && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
             if (n <= 0) throw std::runtime_error("USB stream ended. Check Mac server and HDC connection.");
             p += n; size -= size_t(n);
         }
@@ -117,6 +125,7 @@ private:
         if (self->stopped_) { OH_VideoDecoder_FreeOutputBuffer(c,index); return; }
         if (OH_VideoDecoder_RenderOutputBuffer(c,index) == AV_ERR_OK) {
             ++self->displayed_;
+            self->frameRate_.record();
             self->setStatus("Streaming over HDC USB");
         }
     }
@@ -179,7 +188,7 @@ private:
             { std::lock_guard<std::mutex> l(socketMutex_); connected_ = true; sendViewportLocked(); }
             // Keep the first preview on the upstream legacy video framing (HEVC).
             while (!stopped_) {
-                uint8_t type; read(&type,1);
+                uint8_t type; read(&type,1,true);
                 if (type == 1) {
                     uint8_t data[12]; read(data,sizeof(data));
                     auto w = harmony::be32(data), h = harmony::be32(data+4);
@@ -220,6 +229,7 @@ napi_value Start(napi_env env,napi_callback_info info) {
 napi_value Stop(napi_env env,napi_callback_info) { receiver.stop(); napi_value v; napi_get_undefined(env,&v); return v; }
 napi_value Status(napi_env env,napi_callback_info) { napi_value v; auto s = receiver.status(); napi_create_string_utf8(env,s.c_str(),s.size(),&v); return v; }
 napi_value Frames(napi_env env,napi_callback_info) { napi_value v; napi_create_double(env,double(receiver.frames()),&v); return v; }
+napi_value FPS(napi_env env,napi_callback_info) { napi_value v; napi_create_double(env,receiver.fps(),&v); return v; }
 napi_value Running(napi_env env,napi_callback_info) { napi_value v; napi_get_boolean(env,receiver.running(),&v); return v; }
 napi_value Orientation(napi_env env,napi_callback_info) { napi_value v; napi_create_int32(env,receiver.orientation(),&v); return v; }
 napi_value Viewport(napi_env env,napi_callback_info info) {
@@ -242,11 +252,12 @@ napi_value Init(napi_env env,napi_value exports) {
         {"stop",nullptr,Stop,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"status",nullptr,Status,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"frames",nullptr,Frames,nullptr,nullptr,nullptr,napi_default,nullptr},
+        {"fps",nullptr,FPS,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"running",nullptr,Running,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"viewport",nullptr,Viewport,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"orientation",nullptr,Orientation,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"touch",nullptr,Touch,nullptr,nullptr,nullptr,napi_default,nullptr}};
-    napi_define_properties(env,exports,8,methods); return exports;
+    napi_define_properties(env,exports,sizeof(methods)/sizeof(methods[0]),methods); return exports;
 }
 napi_module module = {1,0,nullptr,Init,"harmonyscreen",nullptr,{0}};
 }

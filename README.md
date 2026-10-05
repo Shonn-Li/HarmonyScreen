@@ -1,6 +1,6 @@
 # HarmonyScreen
 
-A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Based on [SideScreen](https://github.com/tranvuongquocdat/SideScreen), with its MIT license and attribution preserved.
+A free native HarmonyOS second-screen app for macOS, by [YouWo.ai](https://youwo.ai), maintained by Shonn Li. No subscription or account is required for USB streaming. Based on [SideScreen](https://github.com/tranvuongquocdat/SideScreen), with its MIT license and attribution preserved.
 
 **Status: developer preview. Signed native playback on Mate XT 2 is verified over HDC USB, including full-screen 3184×2232 video and recovery after a Mac stream restart. Public assets remain a Mac preview; the device-specific debug HAP is private. General distribution, broad device testing, touch/audio and Mac notarization remain incomplete.**
 
@@ -16,7 +16,7 @@ A native HarmonyOS second-screen project for macOS, maintained by Shonn Li. Base
 
 | Component | Result |
 |---|---|
-| Mac arm64 build | Builds; 51 Swift tests passed |
+| Mac arm64 build | Builds; 56 Swift tests passed |
 | HDC on OpenHarmony 7.0.0.107 | 1 MiB exact USB round-trip passed |
 | Portable frame validation | Address/undefined-behavior sanitizer test passed |
 | Native HAP build | Release-mode arm64 HAP built with DevEco Studio 6.0.1.251 / SDK 6.0.1.112 (API 21); earlier API 24 build also passed |
@@ -62,7 +62,7 @@ This route has produced a signed HAP using DevEco's generated credentials. It st
 
 The native client connects only to localhost:54322 through the HDC USB tunnel. It connects when opened, hides its overlay after video arrives, and retries interrupted streams while the page is visible. Tap the desktop to toggle controls; the back gesture also reveals hidden controls. Manual Disconnect stops automatic retries. This receiver remains display-only and does not send taps to the Mac.
 
-Verified unfolded Mate XT 2 setup: custom **1592×1116**, **HiDPI on**, **30 FPS**, zero rotation/flip. This produces **3184×2232** encoded pixels and fills the matching phone panel with Retina-sized desktop text. The native surface fits other aspect ratios without stretching. Other resolutions, orientations and device models still need validation. Never advertise a device-specific debug package as generally installable on retail Huawei phones.
+Verified unfolded Mate XT 2 setup: custom **1592×1116**, **HiDPI on**, **30 FPS**, zero rotation/flip. This produces **3184×2232** encoded pixels and fills the matching phone panel with Retina-sized desktop text. The native surface fits other aspect ratios without stretching. Automatic sizing and both orientations are now verified on Mate XT 2 (see below); other device models still need validation. Never advertise a device-specific debug package as generally installable on retail Huawei phones.
 
 ## Tests
 
@@ -94,3 +94,29 @@ portrait, switching both ways with the same Mac display ID, and recalculating
 logical size after a Mac display-scale change. The iPad Sidecar display remained
 connected during these final tests. See [transport details](docs/HDC-TRANSPORT.md)
 for the size calculation and the macOS multi-virtual-display recovery limitation.
+
+### Live FPS and everyday connection
+
+Tap the Huawei desktop to show the controls. **Stream FPS** measures successful
+video-decoder submissions to the phone display surface over the last second;
+it is not the physical panel refresh rate or a glass-to-glass latency measurement.
+Choose **Keep FPS visible** for a small persistent counter. The old total frame
+count remains in diagnostic logs. A still desktop can have a low or zero update
+rate without being disconnected. The Mac shows **Sending FPS**, which measures
+a different stage and can differ from the phone.
+
+After the first installation and USB-debugging authorization, leave the Mac host
+running and open the Huawei app. The host detects the authorized USB device,
+repairs the HDC tunnel after reconnection, and the foreground receiver retries.
+**Start streaming on launch** avoids pressing Start each time the Mac app opens.
+This is not yet zero-setup installation for a new customer: official HDC,
+permissions and a properly provisioned native client are still required. Native
+USB attach does not automatically launch the phone app. A sleeping or locked
+phone may need to be unlocked and the app reopened.
+
+HarmonyScreen is offered at **$0 under MIT**, with a small optional link to
+YouWo.ai in both apps. Opening that link leaves the receiver for the browser;
+return to HarmonyScreen to resume. Original SideScreen attribution is retained,
+and LICENSE/NOTICE are included in both application packages. General Huawei
+distribution signing and Apple notarization remain release blockers; see
+[release readiness](docs/RELEASE.md).
