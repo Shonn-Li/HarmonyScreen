@@ -154,6 +154,10 @@ class StreamingServer {
     var phoneOrientation: UInt8 = 0
     var onClientConnected: (() -> Void)?
     var onClientDisconnected: (() -> Void)?
+    /// Called only after transport authentication and capability collection.
+    /// The display may be absent while listening; wait for it before sending
+    /// configuration or frames to this client.
+    var onPrepareStream: ((StreamCodec, @escaping (Bool) -> Void) -> Void)?
     /// Fired once per connection during protocol startup, BEFORE the display
     /// config is sent, for every outcome (.hevc or .h264) — so the capture
     /// pipeline can also revert to HEVC after an AVC-only client goes away.
@@ -225,6 +229,7 @@ class StreamingServer {
     private var isReceiving = false
     private var isStopped = false
     private var connectionReady = false
+    private var preparingConnection = false
     private var waitingForSyncFrame = false
     private var clientSupportsFrameMetadata = false
     private var clientIsAvcOnly = false
@@ -258,6 +263,10 @@ class StreamingServer {
             // Optimize TCP for low-latency streaming
             if let tcpOptions = params.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
                 tcpOptions.noDelay = true  // Disable Nagle's algorithm
+                tcpOptions.enableKeepalive = true
+                tcpOptions.keepaliveIdle = 10
+                tcpOptions.keepaliveInterval = 2
+                tcpOptions.keepaliveCount = 3
             }
 
             newListener = try NWListener(using: params, on: NWEndpoint.Port(integerLiteral: port))
@@ -331,11 +340,11 @@ class StreamingServer {
 
         // Clean up old connection properly
         if let oldConnection = connection {
-            isReceiving = false
-            oldConnection.cancel()
+            clientEnded(oldConnection)
         }
 
         connectionReady = false
+        preparingConnection = false
         clientSupportsFrameMetadata = false
         clientIsAvcOnly = false
         clientDecodeLimits = nil
@@ -345,23 +354,35 @@ class StreamingServer {
         connection = newConnection
         droppedFrames = 0
 
-        connection?.stateUpdateHandler = { [weak self] state in
+        connection?.stateUpdateHandler = { [weak self, weak newConnection] state in
+            guard let self, let newConnection, self.connection === newConnection else { return }
             debugLog("Connection state: \(state)")
             switch state {
             case .ready:
-                self?.onConnectionReady(newConnection)
+                self.onConnectionReady(newConnection)
             case .failed(let error):
                 debugLog("Connection failed: \(error)")
-                self?.onClientDisconnected?()
+                self.clientEnded(newConnection)
             case .cancelled:
                 debugLog("Connection cancelled")
-                self?.onClientDisconnected?()
+                self.clientEnded(newConnection)
             default:
                 break
             }
         }
 
         connection?.start(queue: networkQueue)
+    }
+
+    private func clientEnded(_ conn: NWConnection) {
+        guard connection === conn else { return }
+        connection = nil
+        connectionReady = false
+        preparingConnection = false
+        isReceiving = false
+        inputBuffer.removeAll(keepingCapacity: true)
+        conn.cancel()
+        onClientDisconnected?()
     }
 
     private func onConnectionReady(_ conn: NWConnection) {
@@ -393,9 +414,27 @@ class StreamingServer {
     }
 
     private func finishProtocolStartup(on conn: NWConnection) {
-        guard connection === conn, !isStopped, !connectionReady else { return }
+        guard connection === conn, !isStopped, !connectionReady, !preparingConnection else { return }
+        preparingConnection = true
 
         let codec: StreamCodec = clientIsAvcOnly ? .h264 : .hevc
+        guard let prepare = onPrepareStream else {
+            completeProtocolStartup(on: conn, codec: codec)
+            return
+        }
+        prepare(codec) { [weak self, weak conn] ready in
+            guard let self, let conn else { return }
+            self.networkQueue.async {
+                guard self.connection === conn, !self.isStopped, self.preparingConnection else { return }
+                guard ready else { self.clientEnded(conn); return }
+                self.completeProtocolStartup(on: conn, codec: codec)
+            }
+        }
+    }
+
+    private func completeProtocolStartup(on conn: NWConnection, codec: StreamCodec) {
+        guard connection === conn, !isStopped, !connectionReady else { return }
+        preparingConnection = false
         if clientIsAvcOnly {
             // Safe to send: this client opted in via type 9. Must precede the
             // display config so the client knows the codec before it sizes
@@ -634,6 +673,7 @@ class StreamingServer {
     }
 
     private func startReceivingTouch() {
+        guard let connection else { return }
         guard !isReceiving else {
             debugLog("Already receiving touch events")
             return
@@ -643,22 +683,18 @@ class StreamingServer {
 
         // Use loop-based pattern instead of recursion to prevent stack overflow
         receiveQueue.async { [weak self] in
-            self?.touchReceiveLoop()
+            self?.touchReceiveLoop(on: connection)
         }
     }
 
-    private func touchReceiveLoop() {
-        guard let connection = connection, isReceiving, !isStopped else {
-            isReceiving = false
-            return
-        }
+    private func touchReceiveLoop(on connection: NWConnection) {
+        guard self.connection === connection, isReceiving, !isStopped else { return }
 
         connection.receive(minimumIncompleteLength: 1, maximumLength: 256) { [weak self] data, _, isComplete, error in
-            guard let self = self, self.isReceiving, !self.isStopped else { return }
+            guard let self = self, self.connection === connection, self.isReceiving, !self.isStopped else { return }
 
             if error != nil || isComplete {
-                self.isReceiving = false
-                self.inputBuffer.removeAll(keepingCapacity: true)
+                self.clientEnded(connection)
                 return
             }
 
@@ -668,7 +704,7 @@ class StreamingServer {
             }
 
             self.receiveQueue.async {
-                self.touchReceiveLoop()
+                self.touchReceiveLoop(on: connection)
             }
         }
     }

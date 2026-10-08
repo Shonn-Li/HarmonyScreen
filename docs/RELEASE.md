@@ -1,6 +1,34 @@
 # Release readiness
 
-0.1.4 is installed on the owner's Mac and Mate XT 2. It adds non-blocking host
+## Mac 0.1.6 preview
+
+The installed Mac host now waits for a viewer before creating a virtual display
+or starting capture. A detected disconnect starts a five-second grace period;
+afterward, the monitor and capture are removed while the listener and HDC
+recovery stay available. Short reconnects retain the monitor identity. Graceful
+socket closure is now detected even without another frame being sent, and
+cancelled connection setup cannot reactivate an unused display.
+
+Verified on 2026-10-07 with the installed Developer ID-signed arm64 app:
+
+- All 69 Swift tests passed. The graceful-close regression fails with the old
+  receive behavior and passes with the fix.
+- Cold startup with no phone left only the built-in Mac display active.
+- `python3 scripts/test_display_lifecycle.py` passed two connection cycles,
+  independently decoding 15 HEVC frames at 2232×3184 per cycle. The virtual
+  monitor disappeared in 5.69 and 5.61 seconds after the test viewer closed.
+- Closing during display preparation left no monitor behind. The listener
+  remained available, and the host released its display-sleep assertion.
+- The Huawei was disconnected during this validation. These are real Mac
+  capture/display checks with a local test viewer, not fresh phone playback or
+  physical cable-unplug verification. The native Huawei receiver remains 0.1.4.
+
+This Mac preview is signed but not notarized. AppGallery distribution remains
+subject to the gates below; private Huawei debug signing assets are excluded.
+
+## Previous device validation and distribution gates
+
+0.1.4 was installed on the owner's Mac and Mate XT 2. It added non-blocking host
 recovery, streaming on launch by default, and sensor-based follow-phone rotation
 even when the phone's general rotation lock is enabled. Landscape/portrait
 resizing and recovery from a deliberately occupied host port were verified.

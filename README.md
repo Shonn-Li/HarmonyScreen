@@ -109,6 +109,13 @@ explicitly disabled startup preference is preserved.
 Mac 0.1.5 keeps HDC USB available even when Wireless is selected or remembered
 at startup. The native Huawei 0.1.4 receiver does not need an update for this fix.
 
+Mac 0.1.6 waits without creating an unused monitor. An authenticated viewer
+connection creates the desktop and starts capture. Five seconds after the viewer
+disconnects, the desktop is removed and capture stops; the host keeps listening
+and repairing the USB tunnel so reopening the phone app can reconnect. Short
+reconnects retain the display identity. Clicking Stop also stops the listener.
+The native Huawei receiver remains 0.1.4.
+
 Tap the Huawei desktop to show the controls. **Stream FPS** measures successful
 video-decoder submissions to the phone display surface over the last second;
 it is not the physical panel refresh rate or a glass-to-glass latency measurement.

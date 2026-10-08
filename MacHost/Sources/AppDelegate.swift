@@ -72,6 +72,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var phoneGeometry: PhoneDisplayGeometry?
     private var appliedPhoneLayout: PhoneDisplayLayout?
     private var layoutWork: DispatchWorkItem?
+    private var idleDisplayWork: DispatchWorkItem?
+    private var displayPreparationTask: Task<Void, Never>?
+    private var displayPreparationID: UUID?
     private var preservedDisplayOrigins: [CGDirectDisplayID: CGPoint] = [:]
 
     private func preserveOtherDisplays() {
@@ -125,7 +128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         layoutWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if self.isStartingServer { self.schedulePhoneLayout(); return }
+            if self.isStartingServer || self.displayPreparationTask != nil { self.schedulePhoneLayout(); return }
             let layout = self.phoneLayout()
             if let layout {
                 var summary = "\(layout.pixelWidth) × \(layout.pixelHeight) pixels · desktop \(layout.logicalWidth) × \(layout.logicalHeight)"
@@ -134,7 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 } else { summary += "\nPanel DPI unavailable; using native Retina size" }
                 self.settings.phoneSizeSummary = summary
             }
-            guard self.settings.isRunning else { return }
+            guard self.settings.isRunning, self.settings.displayCreated else { return }
             if layout != self.appliedPhoneLayout {
                 self.restartRunningServer(reason: "Phone or Mac display geometry changed")
             } else { self.arrangePhoneDisplay() }
@@ -402,7 +405,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// pipeline. No-op while stopped.
     private func restartRunningServer(reason: String) {
         Task { @MainActor in
-            guard self.settings.isRunning else { return }
+            guard self.settings.isRunning, self.settings.displayCreated else { return }
             debugLog("\(reason) — restarting server to rebuild virtual display")
             self.preserveOtherDisplays()
             self.tearDownServerResources(saveDisplayPosition: true, keepDisplay: true)
@@ -585,81 +588,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            preserveOtherDisplays()
-            // Create virtual display and run ADB setup in parallel
-            if virtualDisplayManager == nil { virtualDisplayManager = VirtualDisplayManager() }
-            let layout = phoneLayout()
-            appliedPhoneLayout = layout
-            let size = layout.map { (width: $0.logicalWidth, height: $0.logicalHeight) } ?? settings.resolutionSize
-            try virtualDisplayManager?.createDisplay(
-                width: size.width,
-                height: size.height,
-                refreshRate: settings.refreshRate,
-                hiDPI: layout != nil || settings.hiDPI,
-                name: "HarmonyScreen",
-                physicalSizeMM: layout?.millimeters
-            )
-
-            // Disable mirror mode (may fail if already in extend mode)
-            do {
-                try virtualDisplayManager?.disableMirrorMode()
-            } catch {
-                // Not critical - continue anyway
-            }
-
-            await MainActor.run {
-                settings.displayCreated = true
-            }
-
-            // USB is available in both modes. Wireless only enables additional
-            // authenticated LAN clients; the native HarmonyOS app uses HDC.
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await self.setupHDCReverse() }
-                group.addTask { try? await Task.sleep(nanoseconds: 500_000_000) }
-            }
-
-            guard streamRecovery.requested else {
-                tearDownServerResources(saveDisplayPosition: false)
-                return
-            }
-
-            try virtualDisplayManager?.selectMode(width: size.width, height: size.height, hiDPI: layout != nil || settings.hiDPI)
-            restoreOtherDisplays()
-            virtualDisplayManager?.restoreDisplayPosition()
-            arrangePhoneDisplay()
-
-            // Verify display is registered in the system
-            if let vdm = virtualDisplayManager {
-                let registered = vdm.verifyDisplayRegistered()
-                if !registered {
-                    debugLog("WARNING: Virtual display not found in online display list — capture may fail")
-                }
-            }
-
-            // Setup capture
-            guard let displayID = virtualDisplayManager?.displayID else {
-                throw NSError(
-                    domain: "HarmonyScreen.Startup",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "The virtual display was created without a display ID."]
-                )
-            }
-            screenCapture = try await ScreenCapture()
-            screenCapture?.onCaptureMethodChanged = { [weak self] method in
-                guard let self = self else { return }
-                debugLog("Capture method: \(method)")
-                Task { @MainActor in
-                    self.settings.captureMethod = method
-                }
-            }
-            if let layout { screenCapture?.panelOutputSize = (layout.pixelWidth, layout.pixelHeight) }
-            lastAppliedRefreshRate = settings.effectiveRefreshRate
-            try await screenCapture?.setupForVirtualDisplay(displayID, refreshRate: settings.effectiveRefreshRate)
-            guard streamRecovery.requested else {
-                tearDownServerResources(saveDisplayPosition: false)
-                return
-            }
-
+            // Listening does not require an active virtual monitor or capture.
+            await setupHDCReverse()
+            guard streamRecovery.requested else { return }
             // Setup server
             streamingServer = StreamingServer(port: settings.port)
             streamingServer?.touchEnabled = settings.touchEnabled
@@ -685,41 +616,65 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
-            // displayConfig carries the ENCODED size, always. The client sizes and
-            // selects its decoder from it, so a friendlier number here makes it
-            // check capabilities against a resolution it will never receive. The
-            // logical desktop travels separately, for display only.
-            let initialEncode = screenCapture?.encodeSize(for: .hevc) ?? ScreenCapture.physicalSize(for: displayID)
-            streamingServer?.setDesktopSize(width: size.width, height: size.height)
-            streamingServer?.setDisplaySize(width: initialEncode.width, height: initialEncode.height, rotation: layout == nil ? settings.rotation : 0, flipHorizontal: layout == nil && settings.flipHorizontal, flipVertical: layout == nil && settings.flipVertical)
-            streamingServer?.onClientConnected = { [weak self] in
-                guard let self = self else { return }
-                self.screenCapture?.requestKeyframeOrReplayCachedFrame(force: true)
-                Task { @MainActor in
-                    self.settings.clientConnected = true
+            streamingServer?.onPrepareStream = { [weak self, weak server = streamingServer] codec, completion in
+                DispatchQueue.main.async {
+                    guard let self, let server, self.streamingServer === server else { completion(false); return }
+                    self.idleDisplayWork?.cancel()
+                    let previous = self.displayPreparationTask
+                    previous?.cancel()
+                    let preparationID = UUID()
+                    self.displayPreparationID = preparationID
+                    self.displayPreparationTask = Task { @MainActor in
+                        await previous?.value
+                        defer {
+                            if self.displayPreparationID == preparationID {
+                                self.displayPreparationTask = nil
+                                self.displayPreparationID = nil
+                            }
+                        }
+                        do {
+                            try await self.prepareDisplay(for: server, codec: codec)
+                            completion(true)
+                        } catch {
+                            if self.displayPreparationID == preparationID && self.streamingServer === server {
+                                self.removeIdleDisplay()
+                                if !(error is CancellationError) {
+                                    debugLog("Display preparation failed: \(error.localizedDescription)")
+                                    self.settings.streamError = "Could not prepare the display. Reconnect to retry. \(error.localizedDescription)"
+                                }
+                            }
+                            completion(false)
+                        }
+                    }
                 }
             }
-            // Runs synchronously on the server's network queue BEFORE the
-            // display config is sent, so the config below carries the right
-            // dimensions for the negotiated codec.
-            streamingServer?.onCodecNegotiated = { [weak self] codec in
-                guard let self = self, let capture = self.screenCapture else { return }
-                capture.negotiate(codec: codec, clientLimit: self.streamingServer?.clientDecodeLimits)
+            streamingServer?.onClientConnected = { [weak self, weak server = streamingServer] in
+                DispatchQueue.main.async {
+                    guard let self, let server, self.streamingServer === server else { return }
+                    self.idleDisplayWork?.cancel()
+                    self.settings.clientConnected = true
+                    self.screenCapture?.requestKeyframeOrReplayCachedFrame(force: true)
+                }
+            }
+            streamingServer?.onCodecNegotiated = { [weak self, weak server = streamingServer] codec in
+                guard let self, let server, self.streamingServer === server, let capture = self.screenCapture else { return }
+                capture.negotiate(codec: codec, clientLimit: server.clientDecodeLimits)
                 let enc = capture.encodeSize(for: codec)
-                // Whatever the codec negotiation settled on, this is what the
-                // stream's SPS will carry, so it is what the client must size
-                // its decoder for.
-                self.streamingServer?.setDesktopSize(width: size.width, height: size.height)
-                self.streamingServer?.setDisplaySize(width: enc.width, height: enc.height, rotation: layout == nil ? self.settings.rotation : 0, flipHorizontal: layout == nil && self.settings.flipHorizontal, flipVertical: layout == nil && self.settings.flipVertical)
+                server.setDisplaySize(width: enc.width, height: enc.height,
+                    rotation: self.appliedPhoneLayout == nil ? self.settings.rotation : 0,
+                    flipHorizontal: self.appliedPhoneLayout == nil && self.settings.flipHorizontal,
+                    flipVertical: self.appliedPhoneLayout == nil && self.settings.flipVertical)
             }
             streamingServer?.onKeyframeRequested = { [weak self] force in
                 self?.screenCapture?.requestKeyframeOrReplayCachedFrame(force: force)
             }
 
-            streamingServer?.onClientDisconnected = { [weak self] in
-                guard let self = self else { return }
-                Task { @MainActor in
+            streamingServer?.onClientDisconnected = { [weak self, weak server = streamingServer] in
+                DispatchQueue.main.async {
+                    guard let self, let server, self.streamingServer === server else { return }
                     self.settings.clientConnected = false
+                    self.displayPreparationTask?.cancel()
+                    self.scheduleIdleDisplayRemoval()
                     self.supportPolicy.pauseCounting()
                     // Final lastConnected snapshot at the disconnect moment, then
                     // freeze (currentWirelessDevice = nil stops the rolling update
@@ -760,14 +715,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 tearDownServerResources(saveDisplayPosition: false)
                 return
             }
-            screenCapture?.startStreaming(
-                to: server,
-                bitrateMbps: settings.effectiveBitrate,
-                quality: settings.effectiveQuality,
-                gamingBoost: settings.gamingBoost,
-                frameRate: settings.effectiveRefreshRate
-            )
-
             await MainActor.run {
                 supportPolicy.beginSession(continuing: continuingSupportSession)
                 streamRecovery.started()
@@ -776,17 +723,135 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 settings.isRunning = true
             }
 
+            if settings.displayCreated { scheduleIdleDisplayRemoval() }
             print("✅ Server started on port \(settings.port)")
         } catch {
             debugLog("Failed to start stream: \(error.localizedDescription)")
             await MainActor.run {
-                self.tearDownServerResources(saveDisplayPosition: false, keepDisplay: streamRecovery.requested)
+                self.tearDownServerResources(saveDisplayPosition: false)
                 streamRecovery.failed(at: ProcessInfo.processInfo.systemUptime)
                 settings.isRecovering = streamRecovery.requested
                 settings.streamError = streamRecovery.requested ?
                     "Reconnecting automatically. \(error.localizedDescription)" : nil
             }
         }
+    }
+
+    @MainActor
+    private func checkDisplayPreparation(for server: StreamingServer) throws {
+        try Task.checkCancellation()
+        guard streamRecovery.requested, streamingServer === server else { throw CancellationError() }
+    }
+
+    @MainActor
+    private func prepareDisplay(for server: StreamingServer, codec: StreamCodec) async throws {
+        try checkDisplayPreparation(for: server)
+        screenCapture?.stopStreaming()
+        screenCapture = nil
+        preserveOtherDisplays()
+        // Reuse display identity across short reconnects and layout changes.
+        if virtualDisplayManager == nil { virtualDisplayManager = VirtualDisplayManager() }
+        let layout = phoneLayout()
+        appliedPhoneLayout = layout
+        let size = layout.map { (width: $0.logicalWidth, height: $0.logicalHeight) } ?? settings.resolutionSize
+        try virtualDisplayManager?.createDisplay(
+            width: size.width,
+            height: size.height,
+            refreshRate: settings.refreshRate,
+            hiDPI: layout != nil || settings.hiDPI,
+            name: "HarmonyScreen",
+            physicalSizeMM: layout?.millimeters
+        )
+
+        // Disable mirror mode (may fail if already in extend mode)
+        do {
+            try virtualDisplayManager?.disableMirrorMode()
+        } catch {
+            // Not critical - continue anyway
+        }
+
+        await MainActor.run {
+            settings.displayCreated = true
+        }
+
+        try await Task.sleep(nanoseconds: 500_000_000)
+        try checkDisplayPreparation(for: server)
+
+        try virtualDisplayManager?.selectMode(width: size.width, height: size.height, hiDPI: layout != nil || settings.hiDPI)
+        restoreOtherDisplays()
+        virtualDisplayManager?.restoreDisplayPosition()
+        arrangePhoneDisplay()
+
+        // Verify display is registered in the system
+        if let vdm = virtualDisplayManager {
+            let registered = vdm.verifyDisplayRegistered()
+            if !registered {
+                debugLog("WARNING: Virtual display not found in online display list — capture may fail")
+            }
+        }
+
+        // Setup capture
+        guard let displayID = virtualDisplayManager?.displayID else {
+            throw NSError(
+                domain: "HarmonyScreen.Startup",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "The virtual display was created without a display ID."]
+            )
+        }
+        let capture = try await ScreenCapture()
+        var prepared = false
+        defer { if !prepared { capture.stopStreaming() } }
+        try checkDisplayPreparation(for: server)
+        screenCapture = capture
+        capture.onCaptureMethodChanged = { [weak self, weak capture] method in
+            DispatchQueue.main.async {
+                guard let self, self.screenCapture === capture else { return }
+                self.settings.captureMethod = method
+            }
+        }
+        if let layout { capture.panelOutputSize = (layout.pixelWidth, layout.pixelHeight) }
+        lastAppliedRefreshRate = settings.effectiveRefreshRate
+        try await capture.setupForVirtualDisplay(displayID, refreshRate: settings.effectiveRefreshRate)
+        try checkDisplayPreparation(for: server)
+        capture.negotiate(codec: codec, clientLimit: server.clientDecodeLimits)
+        let encoded = capture.encodeSize(for: codec)
+        server.setDesktopSize(width: size.width, height: size.height)
+        server.setDisplaySize(width: encoded.width, height: encoded.height,
+            rotation: layout == nil ? settings.rotation : 0,
+            flipHorizontal: layout == nil && settings.flipHorizontal,
+            flipVertical: layout == nil && settings.flipVertical)
+        capture.startStreaming(to: server, bitrateMbps: settings.effectiveBitrate,
+            quality: settings.effectiveQuality, gamingBoost: settings.gamingBoost,
+            frameRate: settings.effectiveRefreshRate)
+        prepared = true
+        settings.streamError = nil
+    }
+
+    @MainActor
+    private func scheduleIdleDisplayRemoval() {
+        idleDisplayWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.settings.clientConnected else { return }
+            self.displayPreparationTask?.cancel()
+            self.removeIdleDisplay()
+        }
+        idleDisplayWork = work
+        // Brief transport/rotation reconnects should not move the user's windows.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+    }
+
+    private func removeIdleDisplay() {
+        guard virtualDisplayManager != nil || screenCapture != nil else { return }
+        debugLog("No display client — removing virtual display; listener stays ready")
+        virtualDisplayManager?.saveDisplayPosition()
+        screenCapture?.stopStreaming()
+        screenCapture = nil
+        virtualDisplayManager?.destroyDisplay()
+        virtualDisplayManager = nil
+        settings.displayCreated = false
+        settings.currentFPS = 0
+        settings.currentBitrate = 0
+        settings.captureMethod = "Waiting for phone"
     }
 
     /// Code pairing (issue #35): issue a fresh one-time code for this wireless
@@ -823,6 +888,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func tearDownServerResources(saveDisplayPosition: Bool, keepDisplay: Bool = false) {
         supportPolicy.endedSession()
+        idleDisplayWork?.cancel()
+        displayPreparationID = nil
+        displayPreparationTask?.cancel()
+        displayPreparationTask = nil
         if saveDisplayPosition {
             virtualDisplayManager?.saveDisplayPosition()
         }
@@ -839,7 +908,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         currentWirelessDevice = nil
 
         settings.isRunning = false
-        settings.displayCreated = false
+        settings.displayCreated = keepDisplay && virtualDisplayManager?.displayID != nil
         settings.clientConnected = false
         settings.currentWirelessDevice = nil
         settings.currentFPS = 0

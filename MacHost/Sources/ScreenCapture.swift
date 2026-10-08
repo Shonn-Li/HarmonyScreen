@@ -464,12 +464,20 @@ class ScreenCapture {
 
         configureFrameHandler(label: "initial")
 
+        let generation = streamGeneration
+        let startingStream = stream
         Task {
             do {
-                try await stream?.startCapture()
+                guard isStreaming, streamGeneration == generation else { return }
+                try await startingStream?.startCapture()
+                guard isStreaming, streamGeneration == generation else {
+                    try? await startingStream?.stopCapture()
+                    return
+                }
                 debugLog("SCStream capture started — starting frame flow monitor (3s interval, 5s timeout)")
                 startFrameMonitor()
             } catch {
+                guard isStreaming, streamGeneration == generation else { return }
                 debugLog("Failed to start SCStream capture: \(error)")
                 debugLog("Attempting CGDisplayStream fallback due to start failure")
                 attemptFallbackCapture()
@@ -648,7 +656,7 @@ class ScreenCapture {
     // MARK: - CGDisplayStream fallback
 
     private func attemptFallbackCapture() {
-        guard let displayID = virtualDisplayID else {
+        guard isStreaming, let displayID = virtualDisplayID else {
             debugLog("Fallback skipped — no displayID")
             return
         }
@@ -791,6 +799,7 @@ class ScreenCapture {
         // it cannot resurrect capture after this stop.
         isStreaming = false
         streamGeneration &+= 1
+        streamOutput?.onFrameReceived = nil
 
         // Cancel frame flow monitor
         stopFrameMonitor()

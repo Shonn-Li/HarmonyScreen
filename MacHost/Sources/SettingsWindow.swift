@@ -790,7 +790,7 @@ struct SettingsView: View {
                                 StatusRow(title: "Virtual Display",
                                           status: settings.displayCreated ? "Active" : "Inactive",
                                           color: settings.displayCreated ? .green : .secondary,
-                                          hint: "The macOS virtual display we render into. Created when you click Start; the tablet streams its pixels.")
+                                          hint: "Created when a phone connects. Removed five seconds after disconnecting; the host stays ready for the next connection.")
                                 StatusRow(title: "Client Connected",
                                           status: settings.clientConnected ? "Yes" : "No",
                                           color: settings.clientConnected ? .green : .secondary,
@@ -1003,7 +1003,7 @@ struct SettingsView: View {
                                             .stroke(Color.green.opacity(0.3), lineWidth: 2)
                                             .scaleEffect(1.5)
                                     }
-                                Text("Running on port \(settings.port)")
+                                Text(settings.clientConnected ? "Connected · port \(settings.port)" : "Waiting for phone · port \(settings.port)")
                                     .font(.system(size: 12))
                             }
                             .padding(.horizontal, 12)
