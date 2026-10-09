@@ -2,6 +2,9 @@ import UIAbility from '@ohos.app.ability.UIAbility';
 import window from '@ohos.window';
 
 export default class EntryAbility extends UIAbility {
+  onForeground(): void { AppStorage.setOrCreate('harmonyForeground', true); }
+  onBackground(): void { AppStorage.setOrCreate('harmonyForeground', false); }
+
   onWindowStageCreate(stage: window.WindowStage): void {
     try {
       stage.loadContent('pages/Index', (error) => {

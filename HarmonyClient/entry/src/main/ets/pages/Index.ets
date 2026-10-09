@@ -8,8 +8,8 @@ import common from '@ohos.app.ability.common';
 struct Index {
   private controller: XComponentController = new XComponentController();
   private timer: number = -1;
-  private connectRequested: boolean = true;
-  private foreground: boolean = true;
+  @State private connectRequested: boolean = true;
+  @StorageLink('harmonyForeground') @Watch('foregroundChanged') private foreground: boolean = true;
   private retryAt: number = 0;
   private appliedOrientation: number = -1;
   private orientationPending: boolean = false;
@@ -38,7 +38,8 @@ struct Index {
   }
   private hideControlsAt: number = 0;
   private statsLogAt: number = 0;
-  @State private message: string = 'Connect your Huawei by USB and start HarmonyScreen on the Mac.';
+  @State private message: string = 'Waiting for Mac';
+  @State private nextStep: string = 'Connect this Huawei to your Mac with a data cable. Unlock it and approve USB debugging, then open HarmonyScreen on the Mac.';
   @State private receivedFrames: number = 0;
   @State private displayFPS: number = 0;
   @State private showFPS: boolean = false;
@@ -46,6 +47,24 @@ struct Index {
   @State private ready: boolean = false;
   @State private controlsVisible: boolean = true;
   @State private port: string = '54322';
+  @State private placement: number = -1;
+
+  private foregroundChanged(): void {
+    if (this.foreground) { this.retryAt = 0; return; }
+    receiver.stop();
+    this.active = false;
+    this.receivedFrames = 0;
+    this.displayFPS = 0;
+    this.controlsVisible = true;
+  }
+
+  private placeScreen(side: number): void {
+    const alignment = this.placement >= 0 ? this.placement % 3 : 1;
+    if (!receiver.place(side, alignment)) {
+      this.nextStep = 'Reconnect after updating HarmonyScreen on your Mac to change screen position.';
+    }
+    this.hideControlsAt = Date.now() + 10000;
+  }
 
   private connect(): void {
     if (!this.ready || !this.foreground || this.active) { return; }
@@ -59,7 +78,8 @@ struct Index {
     this.receivedFrames = 0;
     this.displayFPS = 0;
     this.active = receiver.start(this.controller.getXComponentSurfaceId(), portNumber);
-    this.message = this.active ? 'Connecting to your Mac…' : receiver.status();
+    // The connection worker may retry; the controls and instructions stay still.
+    this.message = 'Waiting for Mac';
     this.hideControlsAt = Date.now() + 2500;
   }
 
@@ -67,21 +87,29 @@ struct Index {
     this.timer = setInterval(() => {
       if (this.foreground) { this.updateOrientation(); }
       if (this.active) {
-        this.message = receiver.status();
         const frames = receiver.frames();
         if (this.receivedFrames === 0 && frames > 0) {
           console.info('HarmonyScreen: first video frame displayed');
         }
         this.receivedFrames = frames;
         this.displayFPS = receiver.fps();
+        this.placement = receiver.placement();
+        if (frames > 0) { this.message = 'Connected over USB'; }
         if (frames > 0 && Date.now() >= this.statsLogAt) {
           console.info(`HarmonyScreen receiver: ${this.displayFPS.toFixed(1)} FPS; ${frames} frames rendered`);
           this.statsLogAt = Date.now() + 5000;
         }
         if (!receiver.running()) {
+          const reason = receiver.status();
+          console.info(`HarmonyScreen reconnect: ${reason}`);
           this.active = false;
+          this.receivedFrames = 0;
           this.displayFPS = 0;
           this.controlsVisible = true;
+          this.message = 'Waiting for Mac';
+          this.nextStep = reason.includes('picture') || reason.includes('decoder') || reason.includes('Decoder') ?
+            'On your Mac, open HarmonyScreen and check Screen Recording permission. If the picture is still missing, try a lower resolution.' :
+            'Connect this Huawei to your Mac with a data cable. Unlock it and approve USB debugging, then open HarmonyScreen on the Mac.';
           this.retryAt = Date.now() + 3000;
         } else if (frames > 0 && Date.now() >= this.hideControlsAt) {
           this.controlsVisible = false;
@@ -95,9 +123,7 @@ struct Index {
   onPageShow(): void { this.foreground = true; }
   onPageHide(): void {
     this.foreground = false;
-    receiver.stop();
-    this.active = false;
-    this.displayFPS = 0;
+    this.foregroundChanged();
   }
   aboutToDisappear(): void {
     clearInterval(this.timer);
@@ -126,6 +152,12 @@ struct Index {
         .onAreaChange((_old: Area, area: Area) => { this.reportViewport(Number(area.width), Number(area.height)); })
         .onLoad(() => { this.ready = true; this.connect(); })
         .onDestroy(() => { receiver.stop(); this.ready = false; this.active = false; });
+
+      // Do not leave a frozen desktop visible after the connection has ended.
+      if (!this.active || this.receivedFrames === 0) {
+        Column() {}.width('100%').height('100%').backgroundColor('#000000')
+          .hitTestBehavior(HitTestMode.None);
+      }
 
       Column() {}
         .width('100%').height('100%').backgroundColor(Color.Transparent)
@@ -163,6 +195,26 @@ struct Index {
             }
           }.padding(16).width('100%').backgroundColor('#D9111318').borderRadius(16);
           Blank();
+          if (this.receivedFrames === 0) {
+            Column({ space: 8 }) {
+              Text(this.nextStep).fontSize(17).fontColor('#eeeeee');
+              Text(this.connectRequested ? 'We’ll reconnect automatically when it is ready.' : 'Automatic reconnect is paused.')
+                .fontSize(13).fontColor('#b9f3df');
+            }.padding(20).width('100%').backgroundColor('#D9111318').borderRadius(16);
+          }
+          if (this.receivedFrames > 0 && this.placement >= 0) {
+            Column({ space: 8 }) {
+              Text('Place this screen beside your Mac').fontSize(14).fontColor('#eeeeee');
+              Row({ space: 8 }) {
+                ForEach(['Left', 'Right', 'Above', 'Below'], (label: string, index: number) => {
+                  Button(label)
+                    .backgroundColor(Math.floor(this.placement / 3) === index ? '#b9f3df' : '#30353e')
+                    .fontColor(Math.floor(this.placement / 3) === index ? '#111318' : '#eeeeee')
+                    .layoutWeight(1).onClick(() => { this.placeScreen(index); });
+                });
+              }.width('100%');
+            }.padding(12).width('100%').backgroundColor('#D9111318').borderRadius(12);
+          }
           if (this.receivedFrames > 0) {
             Row({ space: 12 }) {
               Text('Stream FPS · fewer updates when the desktop is still').fontSize(12)
@@ -172,15 +224,21 @@ struct Index {
             }.padding(12).width('100%').backgroundColor('#D9111318').borderRadius(12);
           }
           Row({ space: 12 }) {
-            Text('Tap the screen to show or hide controls').fontSize(14).fontColor('#eeeeee')
+            Text(this.receivedFrames > 0 ? 'Tap the screen to show or hide controls' : 'USB reconnect is automatic')
+              .fontSize(14).fontColor('#eeeeee')
               .layoutWeight(1);
-            if (!this.active) {
+            if (!this.connectRequested) {
               TextInput({ text: this.port, placeholder: 'Mac port' }).type(InputType.Number).width(110)
                 .onChange((value: string) => { this.port = value; });
             }
-            Button(this.active ? 'Disconnect' : 'Connect over USB').enabled(this.ready)
+            if (this.connectRequested && this.receivedFrames === 0) {
+              Button('Retry now').enabled(this.ready).onClick(() => {
+                receiver.stop(); this.active = false; this.retryAt = 0; this.connect();
+              });
+            }
+            Button(this.connectRequested ? (this.receivedFrames > 0 ? 'Disconnect' : 'Pause reconnect') : 'Connect over USB').enabled(this.ready)
               .onClick(() => {
-                if (this.active) {
+                if (this.connectRequested) {
                   this.connectRequested = false;
                   receiver.stop();
                   this.active = false;

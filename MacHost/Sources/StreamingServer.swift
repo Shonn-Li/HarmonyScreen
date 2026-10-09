@@ -31,6 +31,8 @@ private enum WireMessage {
     static let desktopGeometry: UInt8 = 13
     static let phoneViewport: UInt8 = 14
     static let phoneOrientation: UInt8 = 15
+    static let phonePlacementRequest: UInt8 = 16
+    static let phonePlacementState: UInt8 = 17
 }
 
 private extension NWEndpoint {
@@ -150,6 +152,8 @@ class StreamingServer {
     private var listener: NWListener?
     private var connection: NWConnection?
     var onPhoneViewport: ((PhoneDisplayGeometry) -> Void)?
+    var onPhonePlacement: ((PhonePlacement?) -> Void)?
+    private var phoneSupportsPlacement = false
     private var phoneSupportsOrientation = false
     var phoneOrientation: UInt8 = 0
     var onClientConnected: (() -> Void)?
@@ -345,6 +349,7 @@ class StreamingServer {
 
         connectionReady = false
         preparingConnection = false
+        phoneSupportsPlacement = false
         clientSupportsFrameMetadata = false
         clientIsAvcOnly = false
         clientDecodeLimits = nil
@@ -383,6 +388,22 @@ class StreamingServer {
         inputBuffer.removeAll(keepingCapacity: true)
         conn.cancel()
         onClientDisconnected?()
+    }
+
+    /// USB disappearance can precede closure of HDC's local socket.
+    func disconnectUSBClient() {
+        networkQueue.async { [weak self] in
+            guard let self, let connection = self.connection, connection.endpoint.isLoopback else { return }
+            self.clientEnded(connection)
+        }
+    }
+
+    func sendPhonePlacement(_ placement: PhonePlacement) {
+        networkQueue.async { [weak self] in
+            guard let self, self.phoneSupportsPlacement, let connection = self.connection else { return }
+            connection.send(content: Data([WireMessage.phonePlacementState] + placement.payload),
+                            completion: .contentProcessed { _ in })
+        }
     }
 
     private func onConnectionReady(_ conn: NWConnection) {
@@ -809,6 +830,14 @@ class StreamingServer {
                         }
                     }
                 }
+
+            case WireMessage.phonePlacementRequest:
+                guard inputBuffer.count >= 3 else { return }
+                let payload = [inputByte(at: 1), inputByte(at: 2)]
+                consumeInputBytes(3)
+                guard payload == [0xff, 0xff] || PhonePlacement.decode(payload) != nil else { continue }
+                phoneSupportsPlacement = true
+                onPhonePlacement?(PhonePlacement.decode(payload)) // nil queries current placement.
 
             case WireMessage.phoneViewport:
                 guard inputBuffer.count >= 9 else { return }

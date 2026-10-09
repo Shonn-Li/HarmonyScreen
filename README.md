@@ -114,7 +114,14 @@ connection creates the desktop and starts capture. Five seconds after the viewer
 disconnects, the desktop is removed and capture stops; the host keeps listening
 and repairing the USB tunnel so reopening the phone app can reconnect. Short
 reconnects retain the display identity. Clicking Stop also stops the listener.
-The native Huawei receiver remains 0.1.4.
+The 0.1.6 lifecycle fix also works with the native Huawei 0.1.4 receiver.
+
+Mac and Huawei 0.1.7 add connection health checks and phone-side placement. Tap
+the phone desktop to show **Left / Right / Above / Below** and change where it
+sits beside the Mac. While disconnected, instructions and **Retry now / Pause
+reconnect** stay steady while the app retries quietly. Returning from the
+background resumes connecting unless you explicitly paused it. A physical USB
+data connection and the existing debugging approval are still required.
 
 Tap the Huawei desktop to show the controls. **Stream FPS** measures successful
 video-decoder submissions to the phone display surface over the last second;

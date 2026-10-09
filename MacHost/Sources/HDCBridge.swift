@@ -2,6 +2,19 @@ import Foundation
 
 /// Uses Huawei's authenticated HDC transport. Never substitutes ADB or enables TCP debugging.
 enum HDCBridge {
+    struct Snapshot {
+        let devices: [String]
+        let reverseConfigured: Bool
+    }
+
+    /// A failed probe is unknown, not evidence that the cable was unplugged.
+    static func snapshot(port: Int) -> Snapshot? {
+        guard let output = run(["list", "targets"]) else { return nil }
+        let targets = parseTargets(output)
+        guard targets.count == 1 else { return Snapshot(devices: targets, reverseConfigured: false) }
+        guard let rules = run(["-t", targets[0], "fport", "ls"]) else { return nil }
+        return Snapshot(devices: targets, reverseConfigured: containsReverse(rules, device: targets[0], port: port))
+    }
     static func executablePath() -> String? {
         let home = NSHomeDirectory()
         let candidates = [ProcessInfo.processInfo.environment["HARMONYSCREEN_HDC"],

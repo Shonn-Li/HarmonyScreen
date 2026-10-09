@@ -2,6 +2,7 @@
 // Native HarmonyOS surface decoder. USB data uses HDC rport, never ADB.
 #include "wire.h"
 #include "frame_rate.h"
+#include "connection_health.h"
 #include <napi/native_api.h>
 #include <native_window/external_window.h>
 #include <multimedia/player_framework/native_avcodec_videodecoder.h>
@@ -35,7 +36,7 @@ public:
         }
         // Fit the complete desktop without distorting it when panel and stream ratios differ.
         OH_NativeWindow_NativeWindowSetScalingModeV2(window_, OH_SCALING_MODE_SCALE_FIT_V2);
-        stopped_ = false; displayed_ = 0; frameRate_.reset();
+        stopped_ = false; displayed_ = 0; frameRate_.reset(); placement_ = -1;
         worker_ = std::thread([this, port] { run(port); });
         return true;
     }
@@ -52,6 +53,13 @@ public:
     double fps() { return stopped_ ? 0.0 : frameRate_.fps(); }
     bool running() const { return !stopped_; }
     int orientation() const { return orientation_; }
+    int placement() const { return placement_; }
+    bool place(int side, int alignment) {
+        if (side < 0 || side > 3 || alignment < 0 || alignment > 2 || placement_ < 0) return false;
+        uint8_t packet[3] = {16, uint8_t(0x80 | side), uint8_t(0x80 | alignment)};
+        std::lock_guard<std::mutex> l(socketMutex_);
+        return connected_ && sendPacketLocked(packet, sizeof(packet));
+    }
     void viewport(uint32_t w, uint32_t h, double dpiX, double dpiY) {
         if (w < 320 || h < 320 || w > 8192 || h > 8192 || uint64_t(w)*h > 32*1024*1024) return;
         auto dpi = [](double v) -> uint32_t { return std::isfinite(v) && v >= 50 && v <= 1000 ? uint32_t(std::round(v*10)) : 0; };
@@ -82,14 +90,24 @@ private:
     bool connected_ = false; // guarded by socketMutex_
     uint8_t viewport_[9]{};
     std::atomic<int> orientation_{-1};
-    void sendViewportLocked() {
-        if (viewport_[0] != 14) return;
+    std::atomic<int> placement_{-1};
+    harmony::ConnectionHealth health_;
+    static double now() {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    bool sendPacketLocked(const uint8_t* packet, size_t size) {
         size_t offset = 0;
-        while (offset < sizeof(viewport_)) {
-            auto n = send(fd_,viewport_+offset,sizeof(viewport_)-offset,MSG_NOSIGNAL);
-            if (n <= 0) { shutdown(fd_,SHUT_RDWR); return; }
+        while (offset < size) {
+            auto n = send(fd_,packet+offset,size-offset,MSG_NOSIGNAL);
+            if (n < 0 && errno == EINTR) continue;
+            if (n <= 0) { shutdown(fd_,SHUT_RDWR); return false; }
             offset += size_t(n);
         }
+        return true;
+    }
+    void sendViewportLocked() {
+        if (viewport_[0] != 14) return;
+        sendPacketLocked(viewport_, sizeof(viewport_));
     }
     std::string status_ = "Ready";
     OHNativeWindow* window_ = nullptr;
@@ -100,12 +118,20 @@ private:
     void read(void* dst, size_t size, bool idleAllowed = false) {
         auto p = static_cast<uint8_t*>(dst);
         while (size && !stopped_) {
+            health_.check(now(), displayed_ > 0);
+            if (health_.pingDue(now())) {
+                uint8_t ping[9] = {4}; // Timestamp is opaque and echoed unchanged.
+                std::lock_guard<std::mutex> l(socketMutex_);
+                if (!sendPacketLocked(ping, sizeof(ping))) throw std::runtime_error("USB connection ended");
+                health_.sentPing(now());
+            }
             auto n = recv(fd_,p,size,0);
             if (n < 0 && errno == EINTR) continue;
             // A static desktop can legitimately send no new frames. Only wait
-            // indefinitely at a message boundary; incomplete payloads still time out.
+            // at a message boundary while heartbeat replies prove the Mac is alive.
             if (n < 0 && idleAllowed && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
             if (n <= 0) throw std::runtime_error("USB stream ended. Check Mac server and HDC connection.");
+            health_.received(now());
             p += n; size -= size_t(n);
         }
         if (size) throw std::runtime_error("Disconnected");
@@ -177,15 +203,22 @@ private:
             setStatus("Connecting to Mac through HDC…");
             { std::lock_guard<std::mutex> l(socketMutex_); fd_ = socket(AF_INET,SOCK_STREAM,0); }
             if (fd_ < 0) throw std::runtime_error("Could not create stream socket");
-            timeval timeout{5,0};
+            timeval timeout{2,0};
             setsockopt(fd_,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));
             setsockopt(fd_,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
             int one = 1; setsockopt(fd_,IPPROTO_TCP,TCP_NODELAY,&one,sizeof(one));
+            setsockopt(fd_,SOL_SOCKET,SO_KEEPALIVE,&one,sizeof(one));
             sockaddr_in address{}; address.sin_family = AF_INET; address.sin_port = htons(port);
             address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
             if (connect(fd_,reinterpret_cast<sockaddr*>(&address),sizeof(address)) != 0)
                 throw std::runtime_error("Mac unreachable. Start HarmonyScreen and verify its HDC tunnel is ready.");
-            { std::lock_guard<std::mutex> l(socketMutex_); connected_ = true; sendViewportLocked(); }
+            health_.start(now());
+            {
+                std::lock_guard<std::mutex> l(socketMutex_);
+                connected_ = true; sendViewportLocked();
+                const uint8_t query[3] = {16, 0xff, 0xff};
+                sendPacketLocked(query, sizeof(query));
+            }
             // Keep the first preview on the upstream legacy video framing (HEVC).
             while (!stopped_) {
                 uint8_t type; read(&type,1,true);
@@ -203,6 +236,11 @@ private:
                     uint8_t value; read(&value,1);
                     if (value > 2) throw std::runtime_error("Invalid phone orientation");
                     orientation_ = value;
+                } else if (type == 17) {
+                    uint8_t value[2]; read(value,2);
+                    if (value[0] < 0x80 || value[0] > 0x83 || value[1] < 0x80 || value[1] > 0x82)
+                        throw std::runtime_error("Invalid screen position from Mac");
+                    placement_ = (value[0] & 0x7f) * 3 + (value[1] & 0x7f);
                 } else if (type == 10) {
                     uint8_t codec; read(&codec,1);
                     if (codec != 0) throw std::runtime_error("This preview requires HEVC");
@@ -232,6 +270,14 @@ napi_value Frames(napi_env env,napi_callback_info) { napi_value v; napi_create_d
 napi_value FPS(napi_env env,napi_callback_info) { napi_value v; napi_create_double(env,receiver.fps(),&v); return v; }
 napi_value Running(napi_env env,napi_callback_info) { napi_value v; napi_get_boolean(env,receiver.running(),&v); return v; }
 napi_value Orientation(napi_env env,napi_callback_info) { napi_value v; napi_create_int32(env,receiver.orientation(),&v); return v; }
+napi_value Placement(napi_env env,napi_callback_info) { napi_value v; napi_create_int32(env,receiver.placement(),&v); return v; }
+napi_value Place(napi_env env,napi_callback_info info) {
+    size_t count=2; napi_value args[2]; napi_get_cb_info(env,info,&count,args,nullptr,nullptr);
+    int32_t side=-1, alignment=-1; bool result=false;
+    if (count==2 && napi_get_value_int32(env,args[0],&side)==napi_ok && napi_get_value_int32(env,args[1],&alignment)==napi_ok)
+        result=receiver.place(side,alignment);
+    napi_value v; napi_get_boolean(env,result,&v); return v;
+}
 napi_value Viewport(napi_env env,napi_callback_info info) {
     size_t count=4; napi_value args[4]; napi_get_cb_info(env,info,&count,args,nullptr,nullptr);
     uint32_t w=0,h=0; double x=0,y=0;
@@ -256,6 +302,8 @@ napi_value Init(napi_env env,napi_value exports) {
         {"running",nullptr,Running,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"viewport",nullptr,Viewport,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"orientation",nullptr,Orientation,nullptr,nullptr,nullptr,napi_default,nullptr},
+        {"placement",nullptr,Placement,nullptr,nullptr,nullptr,napi_default,nullptr},
+        {"place",nullptr,Place,nullptr,nullptr,nullptr,napi_default,nullptr},
         {"touch",nullptr,Touch,nullptr,nullptr,nullptr,napi_default,nullptr}};
     napi_define_properties(env,exports,sizeof(methods)/sizeof(methods[0]),methods); return exports;
 }

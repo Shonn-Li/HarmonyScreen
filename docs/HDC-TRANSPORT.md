@@ -85,3 +85,33 @@ all virtual screens once and reconnect them; app restarts alone may not clear it
 A fresh topology resolved the observed Sidecar/HarmonyScreen mix-up. This is a
 known OS limitation, not a guarantee that all future topology changes are safe:
 https://github.com/waydabber/BetterDisplay/discussions/1322
+
+## Connection health and phone controls (0.1.7)
+
+The native receiver sends the existing type-4 heartbeat every two seconds while
+reading. Eight seconds without any received bytes ends the connection, including
+an HDC socket that remains open after the underlying link stops responding. A
+connection that responds but produces no decoded frame is retried after twelve
+seconds. A static desktop remains valid while heartbeat replies arrive. App
+backgrounding closes the stream; returning to the foreground resumes automatic
+connection attempts unless the user explicitly paused them.
+
+The Mac polls one HDC snapshot at a time. Confirmed USB device disappearance or
+replacement closes only the current loopback viewer; the five-second display
+cleanup still applies. A failed probe is treated as unknown, not as an unplug.
+Tunnel configuration is also serialized. No authorization or network-debugging
+settings are changed.
+
+- **Type 16, phone → Mac:** two high-bit-set bytes for side and alignment. Sides
+  0–3 mean left, right, above, below; alignments 0–2 mean start, center, end.
+  `[0xff, 0xff]` queries the current setting and opts into replies. Malformed
+  payloads are ignored. High-bit payloads are harmless to older hosts.
+- **Type 17, Mac → phone:** the current two-byte placement, sent only after a
+  valid type-16 request. The phone highlights the acknowledged side rather than
+  assuming a tap succeeded. Placement does not require restarting the stream.
+- Placement uses Mac desktop coordinates and is saved on the Mac. It is separate
+  from rotating the phone or changing the encoded resolution.
+
+During automatic retries, the phone shows stable instructions and fixed Retry
+now / Pause reconnect controls. Connection attempts do not toggle the button
+labels or show a stale desktop as live. The display surface stays allocated.

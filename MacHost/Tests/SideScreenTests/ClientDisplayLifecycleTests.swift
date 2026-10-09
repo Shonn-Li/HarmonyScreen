@@ -98,6 +98,27 @@ final class ClientDisplayLifecycleTests: XCTestCase {
         await fulfillment(of: [connected], timeout: 0.2)
     }
 
+    func testUSBDisappearanceClosesLocalClientAndAcceptsReconnect() async throws {
+        let server = StreamingServer(port: 0)
+        defer { server.stop() }
+        let connected = expectation(description: "USB viewer connected")
+        server.onClientConnected = { connected.fulfill() }
+        try await server.start()
+        let client = try connect(to: server)
+        defer { client.cancel() }
+        await fulfillment(of: [connected], timeout: 2)
+        let disconnected = expectation(description: "USB disappearance ends still-open local socket")
+        server.onClientDisconnected = { disconnected.fulfill() }
+        server.disconnectUSBClient()
+        await fulfillment(of: [disconnected], timeout: 2)
+        server.onClientDisconnected = nil
+        let reconnected = expectation(description: "listener survives USB loss")
+        server.onClientConnected = { reconnected.fulfill() }
+        let next = try connect(to: server)
+        defer { next.cancel() }
+        await fulfillment(of: [reconnected], timeout: 2)
+    }
+
     func testFailedDisplayPreparationClosesClientButNotListener() async throws {
         let server = StreamingServer(port: 0)
         defer { server.stop() }

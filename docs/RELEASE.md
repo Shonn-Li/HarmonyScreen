@@ -1,5 +1,39 @@
 # Release readiness
 
+## Mac and Huawei 0.1.7 preview
+
+Installed on the owner's Mac and authorized Mate XT 2 on 2026-10-09. Reconnect
+attempts now keep stable buttons and actionable instructions. The receiver
+checks connection health, clears the stale desktop after a failure, and resumes
+when brought back to the foreground. The Mac handles confirmed USB disappearance
+as a disconnect even if an HDC socket remains open, and serializes USB probes and
+tunnel repair. The phone adds Left / Right / Above / Below placement controls.
+
+Verified:
+
+- 72 Swift tests passed, including fragmented placement requests followed by
+  heartbeat traffic, invalid placement payloads, and forced USB client teardown
+  with the listener remaining available. Portable C++ wire, frame-rate and
+  connection-health tests passed with address/undefined-behavior sanitizers.
+- The installed phone retried a deliberately silent local Mac connection after
+  about eight seconds on two attempts. Waiting-screen button labels and bounds
+  were unchanged between repeated retries; next-step instructions were present
+  in the device's UI layout after the final UI build.
+- The installed receiver displayed actual decoded Mac frames at 2232×3184 after
+  the updated host started. Foreground return and display removal after the
+  phone session ended were observed. A full-screen device image was inspected.
+- Removing the HDC reverse tunnel was repaired automatically in 1.1 seconds.
+- A local protocol client exercised all four placement commands against the
+  installed host. CoreGraphics confirmed the requested sides with one display
+  identity and unchanged other-screen positions; the original setting was
+  restored afterward. Phone-side taps and a physical cable unplug/replug still
+  await user confirmation; tunnel repair is not proof of those manual actions.
+
+Mac release assets contain the Developer ID-signed arm64 DMG and its checksum.
+The native 0.1.7 debug HAP is installed privately on the registered Huawei, not
+published as a generally installable package. Notarization and AppGallery
+distribution remain separate unfinished gates.
+
 ## Mac 0.1.6 preview
 
 The installed Mac host now waits for a viewer before creating a virtual display

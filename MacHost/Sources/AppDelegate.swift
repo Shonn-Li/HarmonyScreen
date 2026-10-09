@@ -75,6 +75,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var idleDisplayWork: DispatchWorkItem?
     private var displayPreparationTask: Task<Void, Never>?
     private var displayPreparationID: UUID?
+    private var checkingUSB = false
+    private var configuringUSB = false
+    private var lastUSBDevices: [String] = []
     private var preservedDisplayOrigins: [CGDirectDisplayID: CGPoint] = [:]
 
     private func preserveOtherDisplays() {
@@ -113,15 +116,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             referenceBounds: CGDisplayBounds(reference), referenceMM: CGDisplayScreenSize(reference))
     }
 
-    private func arrangePhoneDisplay() {
-        guard settings.autoFitPhone, let manager = virtualDisplayManager, let id = manager.displayID else { return }
+    @discardableResult
+    private func arrangePhoneDisplay(placement: PhonePlacement? = nil) -> Bool {
+        guard settings.autoFitPhone || placement != nil else { return true }
+        guard let manager = virtualDisplayManager, let id = manager.displayID else { return true }
         let bounds = CGDisplayBounds(id)
         let origin = DisplayPlacement.origin(reference: CGDisplayBounds(referenceDisplay()), desktop: bounds.size,
-                                             side: settings.placementSide, alignment: settings.placementAlignment)
+                                             side: placement?.side ?? settings.placementSide,
+                                             alignment: placement?.alignment ?? settings.placementAlignment)
         let snapped = CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
         if bounds.origin != snapped {
-            try? manager.setDisplayPosition(x: Int32(snapped.x), y: Int32(snapped.y))
+            do { try manager.setDisplayPosition(x: Int32(snapped.x), y: Int32(snapped.y)) }
+            catch { debugLog("Could not move phone display: \(error)"); return false }
         }
+        return true
     }
 
     private func schedulePhoneLayout() {
@@ -140,7 +148,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard self.settings.isRunning, self.settings.displayCreated else { return }
             if layout != self.appliedPhoneLayout {
                 self.restartRunningServer(reason: "Phone or Mac display geometry changed")
-            } else { self.arrangePhoneDisplay() }
+            } else {
+                self.arrangePhoneDisplay()
+                self.streamingServer?.sendPhonePlacement(PhonePlacement(side: self.settings.placementSide,
+                                                                        alignment: self.settings.placementAlignment))
+            }
         }
         layoutWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(900), execute: work)
@@ -168,7 +180,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Publishers.CombineLatest(settings.$autoFitPhone, settings.$matchMacScale)
             .dropFirst().sink { [weak self] _ in self?.schedulePhoneLayout() }.store(in: &cancellables)
         Publishers.CombineLatest(settings.$placementSide, settings.$placementAlignment)
-            .dropFirst().sink { [weak self] _ in self?.schedulePhoneLayout() }.store(in: &cancellables)
+            .dropFirst().sink { [weak self] _ in
+                self?.schedulePhoneLayout()
+            }.store(in: &cancellables)
         settings.$phoneOrientation.dropFirst().sink { [weak self] value in
             self?.streamingServer?.setPhoneOrientation(value == "portrait" ? 1 : value == "landscape" ? 2 : 0)
         }.store(in: &cancellables)
@@ -257,12 +271,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             pairedDeviceStore.upsert(name: name, lastConnected: Date())
         }
 
+        guard !checkingUSB else { return }
+        checkingUSB = true
         let port = Int(settings.port)
         Task.detached { [weak self] in
-            let devices = StatusDetector.usbDevices()
-            let reverseOK = StatusDetector.hdcReverseConfigured(port: port)
+            let snapshot = HDCBridge.snapshot(port: port)
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
+                self.checkingUSB = false
+                guard Int(self.settings.port) == port, let snapshot else { return }
+                let devices = snapshot.devices
+                let reverseOK = snapshot.reverseConfigured
+                if !self.lastUSBDevices.isEmpty && self.lastUSBDevices != devices {
+                    debugLog("USB device disappeared or changed — ending its display session")
+                    self.streamingServer?.disconnectUSBClient()
+                }
+                self.lastUSBDevices = devices
                 
                 let isConnected = !devices.isEmpty
 
@@ -534,7 +558,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Establish the existing HDC reverse tunnel; do not implement USB authentication ourselves.
+    @MainActor
     func setupHDCReverse() async {
+        guard !configuringUSB else { return }
+        configuringUSB = true
+        defer { configuringUSB = false }
         let port = Int(settings.port)
         let result = await Task.detached(priority: .utility) {
             HDCBridge.configure(port: port)
@@ -593,6 +621,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard streamRecovery.requested else { return }
             // Setup server
             streamingServer = StreamingServer(port: settings.port)
+            streamingServer?.onPhonePlacement = { [weak self, weak server = streamingServer] placement in
+                DispatchQueue.main.async {
+                    guard let self, let server, self.streamingServer === server else { return }
+                    if let placement, self.arrangePhoneDisplay(placement: placement) {
+                        self.settings.placementSide = placement.side
+                        self.settings.placementAlignment = placement.alignment
+                        self.virtualDisplayManager?.saveDisplayPosition()
+                    }
+                    server.sendPhonePlacement(PhonePlacement(side: self.settings.placementSide,
+                                                             alignment: self.settings.placementAlignment))
+                }
+            }
             streamingServer?.touchEnabled = settings.touchEnabled
             streamingServer?.phoneOrientation = orientationCode
             streamingServer?.onPhoneViewport = { [weak self] geometry in
